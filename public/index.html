@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bubble Chat 🫧</title>
+
+  <!-- Google Fonts: Nunito (playful but professional) + DM Mono for codes -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════
+     AUTH SCREEN  (Login / Signup)
+════════════════════════════════════════════ -->
+<div id="authScreen" class="screen active">
+
+  <!-- Decorative blobs -->
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <div class="auth-card">
+    <!-- Logo -->
+    <div class="auth-logo">
+      <span class="logo-bubble">🫧</span>
+      <h1 class="logo-name">Bubble</h1>
+    </div>
+    <p class="auth-tagline">chat. connect. vibe.</p>
+
+    <!-- Tab switcher -->
+    <div class="tab-row">
+      <button class="tab active" id="tabLogin"  onclick="showTab('login')">Log In</button>
+      <button class="tab"        id="tabSignup" onclick="showTab('signup')">Sign Up</button>
+    </div>
+
+    <!-- Login Form -->
+    <div id="formLogin" class="auth-form active">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="loginUser" placeholder="your_username" autocomplete="username"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password"/>
+      </div>
+      <p class="form-error" id="loginError"></p>
+      <button class="btn-primary" onclick="doLogin()">Log In →</button>
+    </div>
+
+    <!-- Signup Form -->
+    <div id="formSignup" class="auth-form">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="signupUser" placeholder="choose a username" autocomplete="username"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="signupPass" placeholder="••••••••" autocomplete="new-password"/>
+      </div>
+      <p class="form-error" id="signupError"></p>
+      <button class="btn-primary" onclick="doSignup()">Create Account →</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════
+     MAIN APP  (Dashboard + Chat)
+════════════════════════════════════════════ -->
+<div id="appScreen" class="screen">
+
+  <!-- ── Sidebar ─────────────────────────────── -->
+  <aside class="sidebar">
+
+    <!-- Profile strip -->
+    <div class="sidebar-top">
+      <div class="my-avatar" id="myAvatar"></div>
+      <div class="my-info">
+        <p class="my-name" id="myName">User</p>
+        <!-- User code + copy button -->
+        <div class="code-row">
+          <span class="my-code" id="myCode">------</span>
+          <button class="copy-btn" onclick="copyCode()" title="Copy your code">⎘</button>
+        </div>
+      </div>
+      <!-- Theme toggle -->
+      <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">☽</button>
+    </div>
+
+    <!-- Search / add friend by code -->
+    <div class="add-section">
+      <p class="section-label">Add Friend</p>
+      <div class="search-row">
+        <input type="text" id="addCodeInput" maxlength="6" placeholder="Enter code…" autocomplete="off"/>
+        <button class="btn-add" onclick="sendRequest()">+</button>
+      </div>
+      <p class="add-msg" id="addMsg"></p>
+    </div>
+
+    <!-- Pending friend requests -->
+    <div class="requests-section" id="requestsSection" style="display:none">
+      <p class="section-label">Requests 🔔</p>
+      <div id="requestsList"></div>
+    </div>
+
+    <!-- Friends list -->
+    <div class="friends-section">
+      <p class="section-label">Friends</p>
+      <div id="friendsList">
+        <p class="empty-msg">No friends yet 🥲<br/>Share your code!</p>
+      </div>
+    </div>
+
+    <!-- Logout -->
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </aside>
+
+  <!-- ── Chat Panel ────────────────────────────── -->
+  <main class="chat-panel" id="chatPanel">
+
+    <!-- Empty state (no chat selected) -->
+    <div class="chat-empty" id="chatEmpty">
+      <span class="empty-icon">💬</span>
+      <p>Select a friend to start chatting</p>
+    </div>
+
+    <!-- Active chat -->
+    <div class="chat-active" id="chatActive" style="display:none">
+
+      <!-- Chat header -->
+      <header class="chat-header">
+        <div class="chat-peer-info">
+          <div class="peer-avatar" id="peerAvatar"></div>
+          <div>
+            <p class="peer-name"  id="peerName">Friend</p>
+            <p class="peer-code"  id="peerCode">------</p>
+          </div>
+        </div>
+      </header>
+
+      <!-- Messages -->
+      <div class="messages" id="messages"></div>
+
+      <!-- Typing indicator -->
+      <div class="typing-indicator" id="typingIndicator" style="display:none">
+        <span></span><span></span><span></span>
+      </div>
+
+      <!-- Input bar -->
+      <footer class="input-bar">
+        <textarea
+          id="msgInput"
+          class="msg-input"
+          placeholder="Say something nice… 🌸"
+          rows="1"
+          onkeydown="handleKey(event)"
+          oninput="handleTyping()"
+        ></textarea>
+        <button class="send-btn" onclick="sendMessage()">↑</button>
+      </footer>
+    </div>
+
+  </main>
+</div>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<!-- Socket.IO client (served by the server automatically) -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

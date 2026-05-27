@@ -1,0 +1,14 @@
+{
+  "name": "bubble-chat",
+  "version": "1.0.0",
+  "description": "A real-time chat app with Socket.IO",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "npx nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.2",
+    "socket.io": "^4.7.4"
+  }
+}
