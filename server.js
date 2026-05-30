@@ -1,222 +1,197 @@
-// ============================================================
-//  Bubble Chat — server.js
-//  Backend: Express + Socket.IO | In-memory storage only
-// ============================================================
+// ═══════════════════════════════════════════════════════════
+//  Sora Chat — server.js
+//  Express HTTP server + native WebSocket (ws library)
+//  In-memory storage: users, messages, active connections
+// ═══════════════════════════════════════════════════════════
 
 const express   = require('express');
 const http      = require('http');
-const { Server } = require('socket.io');
+const WebSocket = require('ws');
 const path      = require('path');
+const crypto    = require('crypto');
 
-// ── App Setup ─────────────────────────────────────────────
 const app    = express();
-const server = http.createServer(app);          // Wrap Express in raw http server
-const io     = new Server(server);              // Attach Socket.IO to that server
+const server = http.createServer(app);
 
-app.use(express.json());                        // Parse JSON request bodies
-app.use(express.static(path.join(__dirname, 'public'))); // Serve frontend files
+// Attach WebSocket server to the same HTTP server
+const wss = new WebSocket.Server({ server });
 
-// ── In-Memory Storage ─────────────────────────────────────
-//  users  : { username → { username, password, code, friends[], requests[] } }
-//  online : { userCode → socket.id }   — who is currently connected
-//  history: { "codeA-codeB" → [messages] }  — chat logs (sorted key so A < B)
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-const users   = {};   // all registered users
-const online  = {};   // code → socket.id
-const history = {};   // conversation history
+// ── In-memory stores ──────────────────────────────────────
+// users   : Map<userId, { userId, username, joinedAt }>
+// messages: Array<{ id, userId, username, text, time }>
+// clients : Map<ws, userId>   ← which socket belongs to which user
 
-// ── Helper: Generate a unique 6-char user code like "AB12CD" ─
-function makeCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code;
-  do {
-    code = Array.from({ length: 6 }, () =>
-      chars[Math.floor(Math.random() * chars.length)]
-    ).join('');
-  } while (Object.values(users).some(u => u.code === code)); // ensure uniqueness
-  return code;
+const users    = new Map();   // registered/active users
+const messages = [];          // chat history (last 200 kept)
+const clients  = new Map();   // ws → userId
+
+const MAX_HISTORY = 200;
+
+// ── Helpers ───────────────────────────────────────────────
+// Generate a short random ID like "u_4f2a"
+function makeId(prefix = 'u') {
+  return `${prefix}_${crypto.randomBytes(3).toString('hex')}`;
 }
 
-// ── Helper: Canonical key for a conversation between two codes ─
-function convKey(a, b) {
-  return [a, b].sort().join('-');
+// Broadcast a JSON payload to ALL connected clients
+function broadcast(data) {
+  const text = JSON.stringify(data);
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(text);
+  });
 }
 
-// ── Helper: Find user by code ──────────────────────────────
-function findByCode(code) {
-  return Object.values(users).find(u => u.code === code) || null;
+// Broadcast to everyone EXCEPT one specific socket
+function broadcastExcept(data, excludeWs) {
+  const text = JSON.stringify(data);
+  wss.clients.forEach(ws => {
+    if (ws !== excludeWs && ws.readyState === WebSocket.OPEN) ws.send(text);
+  });
 }
 
-// =============================================================
-//  REST Routes
-// =============================================================
+// Send JSON to a single socket
+function send(ws, data) {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+}
 
-// ── POST /signup ───────────────────────────────────────────
-app.post('/signup', (req, res) => {
-  const { username, password } = req.body;
+// Return a list of active users (safe, no sensitive data)
+function activeUserList() {
+  return [...clients.entries()].map(([, uid]) => {
+    const u = users.get(uid);
+    return u ? { userId: u.userId, username: u.username } : null;
+  }).filter(Boolean);
+}
 
-  if (!username || !password)
-    return res.status(400).json({ error: 'Username and password required.' });
+// ── REST: Join (create or resume a session) ───────────────
+// POST /api/join  { username? }  → { userId, username, history }
+app.post('/api/join', (req, res) => {
+  let { username, userId } = req.body;
 
-  if (users[username])
-    return res.status(409).json({ error: 'Username already taken.' });
+  // Validate / sanitise username
+  username = (username || '').trim().slice(0, 24) || `Guest${Math.floor(Math.random() * 9000) + 1000}`;
 
-  const code = makeCode();
-  users[username] = { username, password, code, friends: [], requests: [] };
-
-  console.log(`[signup] ${username} → code: ${code}`);
-  res.json({ success: true, code });
-});
-
-// ── POST /login ────────────────────────────────────────────
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  const user = users[username];
-
-  if (!user || user.password !== password)
-    return res.status(401).json({ error: 'Invalid username or password.' });
-
-  const { friends, requests } = user;
-  // Return safe user data (no password)
-  res.json({ success: true, username, code: user.code, friends, requests });
-});
-
-// ── POST /send-request ────────────────────────────────────
-//  Body: { senderCode, targetCode }
-app.post('/send-request', (req, res) => {
-  const { senderCode, targetCode } = req.body;
-
-  if (senderCode === targetCode)
-    return res.status(400).json({ error: "You can't add yourself." });
-
-  const sender = findByCode(senderCode);
-  const target = findByCode(targetCode);
-
-  if (!sender || !target)
-    return res.status(404).json({ error: 'User not found.' });
-
-  // Already friends?
-  if (target.friends.includes(senderCode))
-    return res.status(409).json({ error: 'Already friends.' });
-
-  // Already requested?
-  if (target.requests.includes(senderCode))
-    return res.status(409).json({ error: 'Request already sent.' });
-
-  // Push request
-  target.requests.push(senderCode);
-
-  // Notify target in real-time if they're online
-  const targetSocketId = online[targetCode];
-  if (targetSocketId) {
-    io.to(targetSocketId).emit('new-request', {
-      code: senderCode,
-      username: sender.username,
-    });
+  // If the client is rejoining with a known ID, update their name
+  if (userId && users.has(userId)) {
+    users.get(userId).username = username;
+  } else {
+    userId = makeId('u');
+    users.set(userId, { userId, username, joinedAt: Date.now() });
   }
 
-  res.json({ success: true, targetUsername: target.username });
-});
+  console.log(`[join] ${username} (${userId})`);
 
-// ── POST /accept-request ──────────────────────────────────
-//  Body: { userCode, requesterCode, action: 'accept'|'reject' }
-app.post('/accept-request', (req, res) => {
-  const { userCode, requesterCode, action } = req.body;
-
-  const user      = findByCode(userCode);
-  const requester = findByCode(requesterCode);
-
-  if (!user || !requester)
-    return res.status(404).json({ error: 'User not found.' });
-
-  // Remove from requests list regardless of action
-  user.requests = user.requests.filter(c => c !== requesterCode);
-
-  if (action === 'accept') {
-    // Add each other as friends (avoid duplicates)
-    if (!user.friends.includes(requesterCode))      user.friends.push(requesterCode);
-    if (!requester.friends.includes(userCode))      requester.friends.push(userCode);
-
-    // Notify the requester that they were accepted
-    const reqSocketId = online[requesterCode];
-    if (reqSocketId) {
-      io.to(reqSocketId).emit('request-accepted', {
-        code: userCode,
-        username: user.username,
-      });
-    }
-
-    return res.json({
-      success: true,
-      newFriend: { code: requesterCode, username: requester.username },
-    });
-  }
-
-  // action === 'reject'
-  res.json({ success: true });
-});
-
-// ── GET /history?a=CODE&b=CODE ─────────────────────────────
-app.get('/history', (req, res) => {
-  const { a, b } = req.query;
-  const key = convKey(a, b);
-  res.json(history[key] || []);
-});
-
-// =============================================================
-//  Socket.IO — Real-time Events
-// =============================================================
-io.on('connection', (socket) => {
-
-  // Client registers their code so we can route events
-  socket.on('register', (code) => {
-    online[code] = socket.id;
-    socket.userCode = code;           // store on socket for cleanup
-    console.log(`[online] ${code} connected (${socket.id})`);
-  });
-
-  // ── Send a chat message ────────────────────────────────
-  socket.on('chat-message', ({ senderCode, receiverCode, text }) => {
-    const msg = {
-      senderCode,
-      text,
-      time: new Date().toISOString(),
-    };
-
-    // Persist in memory
-    const key = convKey(senderCode, receiverCode);
-    if (!history[key]) history[key] = [];
-    history[key].push(msg);
-
-    // Deliver to receiver if online
-    const receiverSocket = online[receiverCode];
-    if (receiverSocket) {
-      io.to(receiverSocket).emit('chat-message', { ...msg, receiverCode });
-    }
-
-    // Echo back to sender so they see confirmation
-    socket.emit('chat-message', { ...msg, receiverCode });
-  });
-
-  // ── Typing indicator ───────────────────────────────────
-  socket.on('typing', ({ senderCode, receiverCode, isTyping }) => {
-    const receiverSocket = online[receiverCode];
-    if (receiverSocket) {
-      io.to(receiverSocket).emit('typing', { senderCode, isTyping });
-    }
-  });
-
-  // ── Cleanup on disconnect ──────────────────────────────
-  socket.on('disconnect', () => {
-    if (socket.userCode) {
-      delete online[socket.userCode];
-      console.log(`[offline] ${socket.userCode} disconnected`);
-    }
+  res.json({
+    userId,
+    username,
+    history: messages.slice(-60), // last 60 messages on join
   });
 });
 
-// ── Start Server ───────────────────────────────────────────
+// REST: Update username mid-session
+// PATCH /api/username  { userId, username }
+app.patch('/api/username', (req, res) => {
+  const { userId, username } = req.body;
+  const clean = (username || '').trim().slice(0, 24);
+  if (!clean) return res.status(400).json({ error: 'Empty username.' });
+  if (!users.has(userId)) return res.status(404).json({ error: 'User not found.' });
+
+  const old = users.get(userId).username;
+  users.get(userId).username = clean;
+
+  // Tell everyone about the rename
+  broadcast({ type: 'system', text: `✏️ ${old} is now ${clean}` });
+  broadcast({ type: 'active-users', users: activeUserList() });
+
+  res.json({ ok: true, username: clean });
+});
+
+// ── WebSocket Connection ──────────────────────────────────
+wss.on('connection', (ws, req) => {
+  console.log('[ws] new connection');
+
+  // ── Incoming message handler ───────────────────────────
+  ws.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+
+    switch (msg.type) {
+
+      // Client identifies themselves after connecting
+      case 'register': {
+        const user = users.get(msg.userId);
+        if (!user) { send(ws, { type: 'error', text: 'Unknown user. Please refresh.' }); return; }
+
+        clients.set(ws, msg.userId);
+        ws.userId = msg.userId;
+
+        // Welcome this client
+        send(ws, { type: 'system', text: `Welcome back, ${user.username}! 👋` });
+
+        // Tell everyone they joined
+        broadcastExcept({ type: 'system', text: `${user.username} joined the chat 🌿` }, ws);
+
+        // Push current active users to everyone
+        broadcast({ type: 'active-users', users: activeUserList() });
+        break;
+      }
+
+      // Chat message
+      case 'message': {
+        const user = clients.has(ws) ? users.get(clients.get(ws)) : null;
+        if (!user) return;
+
+        const text = (msg.text || '').trim().slice(0, 2000);
+        if (!text) return;
+
+        const entry = {
+          id:       makeId('m'),
+          userId:   user.userId,
+          username: user.username,
+          text,
+          time:     new Date().toISOString(),
+        };
+
+        messages.push(entry);
+        if (messages.length > MAX_HISTORY) messages.shift(); // keep rolling window
+
+        broadcast({ type: 'message', ...entry });
+        break;
+      }
+
+      // Typing indicator
+      case 'typing': {
+        const user = clients.has(ws) ? users.get(clients.get(ws)) : null;
+        if (!user) return;
+        broadcastExcept({ type: 'typing', userId: user.userId, username: user.username, isTyping: msg.isTyping }, ws);
+        break;
+      }
+
+      default:
+        break;
+    }
+  });
+
+  // ── Client disconnected ────────────────────────────────
+  ws.on('close', () => {
+    const uid  = clients.get(ws);
+    const user = uid ? users.get(uid) : null;
+    clients.delete(ws);
+
+    if (user) {
+      console.log(`[ws] ${user.username} disconnected`);
+      broadcast({ type: 'system', text: `${user.username} left the chat 👋` });
+      broadcast({ type: 'active-users', users: activeUserList() });
+    }
+  });
+
+  ws.on('error', (err) => console.error('[ws error]', err.message));
+});
+
+// ── Start ─────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n🫧  Bubble Chat running → http://localhost:${PORT}\n`);
+  console.log(`\n🌿  Sora Chat running → http://localhost:${PORT}\n`);
 });

@@ -1,464 +1,523 @@
-// ============================================================
-//  Bubble Chat — script.js
-//  Handles: auth, friend requests, real-time chat via Socket.IO
-// ============================================================
+// ═══════════════════════════════════════════════════════════
+//  Sora Chat — script.js
+//  Handles: join flow, WebSocket lifecycle, messaging,
+//           username editing, theme/accent/sound prefs,
+//           active users, typing indicator
+// ═══════════════════════════════════════════════════════════
 
-// ── Globals ───────────────────────────────────────────────
-let me = null;         // { username, code, friends:[], requests:[] }
-let socket = null;     // Socket.IO connection
-let activeFriend = null; // { code, username, avatarClass }
-let typingTimer = null;  // debounce timer for typing indicator
+// ── State ─────────────────────────────────────────────────
+let ws        = null;       // WebSocket connection
+let myUserId  = null;       // assigned by server
+let myUsername= '';         // current display name
+let typingTO  = null;       // debounce timer for typing events
+let wasTyping = false;      // track last typing state sent
 
-// ── Avatar colors (matched with CSS .av-N classes) ────────
-const AV_COLORS = ['av-0','av-1','av-2','av-3','av-4','av-5'];
-function avatarClass(code) {
-  // Deterministic color from the code string
-  let n = 0;
-  for (const c of code) n += c.charCodeAt(0);
-  return AV_COLORS[n % AV_COLORS.length];
-}
-function initials(username) {
-  return username.slice(0,2).toUpperCase();
-}
+// ── Audio (soft pop for incoming messages) ────────────────
+// Created lazily on first interaction to comply with browser autoplay policy
+let audioCtx = null;
 
-// ============================================================
-//  AUTH TABS
-// ============================================================
-function showTab(tab) {
-  document.getElementById('tabLogin').classList.toggle('active',  tab === 'login');
-  document.getElementById('tabSignup').classList.toggle('active', tab === 'signup');
-  document.getElementById('formLogin').classList.toggle('active', tab === 'login');
-  document.getElementById('formSignup').classList.toggle('active', tab === 'signup');
-  clearErrors();
-}
-
-function clearErrors() {
-  document.getElementById('loginError').textContent  = '';
-  document.getElementById('signupError').textContent = '';
+function playPop() {
+  try {
+    if (!document.getElementById('soundToggle')?.checked) return;
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type    = 'sine';
+    osc.frequency.setValueAtTime(660, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.15);
+  } catch { /* silence audio errors */ }
 }
 
-// ── Signup ─────────────────────────────────────────────────
-async function doSignup() {
-  const username = document.getElementById('signupUser').value.trim();
-  const password = document.getElementById('signupPass').value;
+// ══════════════════════════════════════════════════════════
+//  PREFERENCES  (localStorage)
+// ══════════════════════════════════════════════════════════
+const PREF_KEY = 'sora_prefs';
 
-  if (!username || !password) {
-    document.getElementById('signupError').textContent = 'Fill in both fields.';
-    return;
-  }
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; }
+}
+function savePrefs(patch) {
+  const prefs = { ...loadPrefs(), ...patch };
+  localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
+}
 
-  const res  = await fetch('/signup', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+/** Call whenever a setting widget changes — reads current UI state and persists */
+function savePref() {
+  savePrefs({
+    sound: document.getElementById('soundToggle')?.checked ?? false,
   });
-  const data = await res.json();
-
-  if (!res.ok) {
-    document.getElementById('signupError').textContent = data.error;
-    return;
-  }
-
-  showToast(`Welcome, ${username}! Your code: ${data.code} 🎉`);
-  showTab('login');
-  document.getElementById('loginUser').value = username;
 }
 
-// ── Login ──────────────────────────────────────────────────
-async function doLogin() {
-  const username = document.getElementById('loginUser').value.trim();
-  const password = document.getElementById('loginPass').value;
+/** Apply all saved prefs to the DOM on page load */
+function applyPrefs() {
+  const p = loadPrefs();
 
-  if (!username || !password) {
-    document.getElementById('loginError').textContent = 'Fill in both fields.';
-    return;
-  }
+  // Stored username / userId
+  if (p.username) document.getElementById('joinUsername').value = p.username;
 
-  const res  = await fetch('/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+  // Theme
+  const theme = p.theme || 'light';
+  document.documentElement.setAttribute('data-theme', theme);
+  syncThemeButtons(theme);
+
+  // Accent
+  const accent = p.accent || 'sage';
+  document.documentElement.setAttribute('data-accent', accent);
+  syncAccentDots(accent);
+
+  // Sound
+  const soundEl = document.getElementById('soundToggle');
+  if (soundEl) soundEl.checked = p.sound ?? false;
+}
+
+// ══════════════════════════════════════════════════════════
+//  THEME TOGGLE
+// ══════════════════════════════════════════════════════════
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next    = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  syncThemeButtons(next);
+  savePrefs({ theme: next });
+}
+
+function syncThemeButtons(theme) {
+  const label = theme === 'dark' ? '☀︎  Light' : '☽  Dark';
+  const moon  = theme === 'dark' ? '☀︎' : '☽';
+  const el = document.getElementById('themeBtn');
+  if (el) el.textContent = label;
+  const lb = document.getElementById('landingThemeBtn');
+  if (lb) lb.textContent = moon;
+}
+
+// ══════════════════════════════════════════════════════════
+//  ACCENT
+// ══════════════════════════════════════════════════════════
+function setAccent(name) {
+  document.documentElement.setAttribute('data-accent', name);
+  syncAccentDots(name);
+  savePrefs({ accent: name });
+}
+
+function syncAccentDots(active) {
+  document.querySelectorAll('.dot').forEach(d => {
+    const match = d.classList.contains(`dot-${active}`);
+    d.classList.toggle('active', match);
+    d.setAttribute('aria-pressed', String(match));
   });
-  const data = await res.json();
+}
 
-  if (!res.ok) {
-    document.getElementById('loginError').textContent = data.error;
-    return;
+// ══════════════════════════════════════════════════════════
+//  JOIN FLOW
+// ══════════════════════════════════════════════════════════
+async function joinChat() {
+  const input    = document.getElementById('joinUsername');
+  const errorEl  = document.getElementById('joinError');
+  const username = input.value.trim();
+
+  errorEl.textContent = '';
+  if (!username) { errorEl.textContent = 'Please enter your name.'; input.focus(); return; }
+
+  // Retrieve a previously assigned userId (so the server can recognise a reconnect)
+  const prefs  = loadPrefs();
+  const stored = prefs.userId || null;
+
+  try {
+    const res  = await fetch('/api/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, userId: stored }),
+    });
+    const data = await res.json();
+    if (!res.ok) { errorEl.textContent = data.error || 'Something went wrong.'; return; }
+
+    myUserId   = data.userId;
+    myUsername = data.username;
+
+    savePrefs({ userId: myUserId, username: myUsername });
+
+    // Switch to app screen
+    showApp(data.history || []);
+  } catch {
+    errorEl.textContent = 'Could not connect. Is the server running?';
   }
-
-  // Save session data
-  me = { username: data.username, code: data.code, friends: data.friends, requests: data.requests };
-  enterApp();
 }
 
-// ── Logout ─────────────────────────────────────────────────
-function logout() {
-  if (socket) socket.disconnect();
-  me = null; socket = null; activeFriend = null;
-  // Switch back to auth screen
-  document.getElementById('appScreen').classList.remove('active');
-  document.getElementById('authScreen').classList.add('active');
-  document.getElementById('loginPass').value = '';
-  clearErrors();
-}
-
-// ============================================================
-//  ENTER APP — called right after successful login
-// ============================================================
-function enterApp() {
-  // Switch screens
-  document.getElementById('authScreen').classList.remove('active');
+// ══════════════════════════════════════════════════════════
+//  SHOW APP — called once after join
+// ══════════════════════════════════════════════════════════
+function showApp(history) {
+  document.getElementById('landingScreen').classList.remove('active');
   document.getElementById('appScreen').classList.add('active');
 
   // Populate profile strip
-  const av = avatarClass(me.code);
-  document.getElementById('myAvatar').textContent = initials(me.username);
-  document.getElementById('myAvatar').className   = `my-avatar ${av}`;
-  document.getElementById('myName').textContent   = me.username;
-  document.getElementById('myCode').textContent   = me.code;
+  document.getElementById('usernameText').textContent = myUsername;
+  document.getElementById('userIdText').textContent   = myUserId;
+  document.getElementById('profileAvatar').textContent = myUsername.charAt(0).toUpperCase();
 
-  // Render initial friends & requests
-  renderFriends();
-  renderRequests();
-
-  // Connect Socket.IO and register our code
-  connectSocket();
-}
-
-// ============================================================
-//  SOCKET.IO
-// ============================================================
-function connectSocket() {
-  socket = io();
-
-  // Tell the server who we are
-  socket.emit('register', me.code);
-
-  // ── Incoming friend request notification ────────────────
-  socket.on('new-request', ({ code, username }) => {
-    // Add to local requests array if not already there
-    if (!me.requests.includes(code)) {
-      me.requests.push(code);
-      renderRequests();
-      showToast(`Friend request from ${username} (${code}) 🔔`);
-    }
-  });
-
-  // ── Friend accepted us ──────────────────────────────────
-  socket.on('request-accepted', ({ code, username }) => {
-    if (!me.friends.includes(code)) {
-      me.friends.push(code);
-      renderFriends();
-      showToast(`${username} accepted your request! 🎉`);
-    }
-  });
-
-  // ── Incoming chat message ───────────────────────────────
-  socket.on('chat-message', (msg) => {
-    const { senderCode, receiverCode, text, time } = msg;
-
-    // Show in chat window only if the conversation is active
-    const peer = senderCode === me.code ? receiverCode : senderCode;
-    if (activeFriend && activeFriend.code === peer) {
-      appendMessage(senderCode === me.code ? 'me' : 'them', text, time);
-    } else if (senderCode !== me.code) {
-      // Notify with a toast if the chat is not open
-      const friend = findFriendUser(senderCode);
-      showToast(`💬 ${friend ? friend.username : senderCode}: ${text.slice(0,40)}`);
-    }
-  });
-
-  // ── Typing indicator ────────────────────────────────────
-  socket.on('typing', ({ senderCode, isTyping }) => {
-    if (activeFriend && activeFriend.code === senderCode) {
-      document.getElementById('typingIndicator').style.display = isTyping ? 'flex' : 'none';
-      if (isTyping) scrollToBottom();
-    }
-  });
-}
-
-// ============================================================
-//  FRIENDS
-// ============================================================
-
-// Render the friends list in the sidebar
-function renderFriends() {
-  const list = document.getElementById('friendsList');
-  if (me.friends.length === 0) {
-    list.innerHTML = '<p class="empty-msg">No friends yet 🥲<br/>Share your code!</p>';
-    return;
-  }
-  list.innerHTML = '';
-  me.friends.forEach((code, i) => {
-    const username = friendUsernameFromCode(code);
-    const av       = avatarClass(code);
-    const div      = document.createElement('div');
-    div.className  = 'friend-item';
-    div.dataset.code = code;
-    div.innerHTML  = `
-      <div class="friend-avatar ${av}">${initials(username)}</div>
-      <div class="friend-info">
-        <p class="friend-name">${username}</p>
-        <p class="friend-code">${code}</p>
-      </div>`;
-    div.onclick = () => openChat(code, username, av);
-    list.appendChild(div);
-  });
-}
-
-// We don't have a local username→code map, so we store username
-// in friends as "username|code" when we accept, OR just by code.
-// For simplicity: after accept the server returns the username.
-// We cache it in a local map.
-const friendNames = {}; // code → username
-
-function friendUsernameFromCode(code) {
-  return friendNames[code] || code;
-}
-
-// Find a friend's cached info by code
-function findFriendUser(code) {
-  return friendNames[code] ? { username: friendNames[code], code } : null;
-}
-
-// ── Render pending requests ──────────────────────────────
-function renderRequests() {
-  const section = document.getElementById('requestsSection');
-  const list    = document.getElementById('requestsList');
-
-  if (me.requests.length === 0) {
-    section.style.display = 'none';
-    list.innerHTML = '';
-    return;
-  }
-
-  section.style.display = 'block';
-  list.innerHTML = '';
-
-  me.requests.forEach(code => {
-    const div = document.createElement('div');
-    div.className = 'request-item';
-    div.id = `req-${code}`;
-    div.innerHTML = `
-      <div class="friend-avatar ${avatarClass(code)}">${code.slice(0,2)}</div>
-      <div class="request-info">
-        <p class="request-name">${code}</p>
-      </div>
-      <div class="req-actions">
-        <button class="req-btn accept" onclick="respondRequest('${code}','accept')">✓</button>
-        <button class="req-btn reject" onclick="respondRequest('${code}','reject')">✕</button>
-      </div>`;
-    list.appendChild(div);
-  });
-}
-
-// ── Send a friend request ─────────────────────────────────
-async function sendRequest() {
-  const code    = document.getElementById('addCodeInput').value.trim().toUpperCase();
-  const msgEl   = document.getElementById('addMsg');
-  msgEl.className = 'add-msg';
-
-  if (code.length !== 6) { msgEl.textContent = 'Code must be 6 characters.'; msgEl.className += ' error'; return; }
-  if (code === me.code)  { msgEl.textContent = "That's your own code 😅";    msgEl.className += ' error'; return; }
-
-  const res  = await fetch('/send-request', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ senderCode: me.code, targetCode: code }),
-  });
-  const data = await res.json();
-
-  if (!res.ok) {
-    msgEl.textContent = data.error;
-    msgEl.className += ' error';
-    return;
-  }
-
-  msgEl.textContent = `Request sent to ${data.targetUsername}! 📨`;
-  document.getElementById('addCodeInput').value = '';
-}
-
-// ── Accept or reject a request ────────────────────────────
-async function respondRequest(requesterCode, action) {
-  const res  = await fetch('/accept-request', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userCode: me.code, requesterCode, action }),
-  });
-  const data = await res.json();
-
-  if (!res.ok) { showToast(data.error); return; }
-
-  // Remove from local requests array
-  me.requests = me.requests.filter(c => c !== requesterCode);
-
-  if (action === 'accept' && data.newFriend) {
-    me.friends.push(data.newFriend.code);
-    friendNames[data.newFriend.code] = data.newFriend.username;
-    renderFriends();
-    showToast(`You're now friends with ${data.newFriend.username}! 🎉`);
-  }
-
-  renderRequests();
-}
-
-// ============================================================
-//  CHAT
-// ============================================================
-
-// ── Open a chat with a friend ─────────────────────────────
-async function openChat(code, username, av) {
-  activeFriend = { code, username, avatarClass: av };
-
-  // Update sidebar active state
-  document.querySelectorAll('.friend-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.code === code);
-  });
-
-  // Update chat header
-  document.getElementById('peerAvatar').textContent = initials(username);
-  document.getElementById('peerAvatar').className   = `peer-avatar ${av}`;
-  document.getElementById('peerName').textContent   = username;
-  document.getElementById('peerCode').textContent   = code;
-
-  // Show chat panel
-  document.getElementById('chatEmpty').style.display  = 'none';
-  document.getElementById('chatActive').style.display = 'flex';
-  document.getElementById('typingIndicator').style.display = 'none';
-
-  // Load history
-  const messages = document.getElementById('messages');
-  messages.innerHTML = '';
-  const res  = await fetch(`/history?a=${me.code}&b=${code}`);
-  const history = await res.json();
-
+  // Render history
+  const msgs = document.getElementById('messages');
+  msgs.innerHTML = '';
   if (history.length > 0) {
-    messages.innerHTML += `<div class="date-sep">Earlier</div>`;
-    history.forEach(m => appendMessage(m.senderCode === me.code ? 'me' : 'them', m.text, m.time, true));
+    appendDateChip('Earlier');
+    history.forEach(m => appendMessage(m, false));
+  }
+  scrollToBottom();
+
+  // Open WebSocket
+  connectWebSocket();
+}
+
+// ══════════════════════════════════════════════════════════
+//  WEBSOCKET
+// ══════════════════════════════════════════════════════════
+function connectWebSocket() {
+  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${protocol}://${location.host}`);
+
+  ws.addEventListener('open', () => {
+    hideConnToast();
+    // Register this socket as our user
+    wsSend({ type: 'register', userId: myUserId });
+  });
+
+  ws.addEventListener('message', ({ data }) => {
+    let msg;
+    try { msg = JSON.parse(data); } catch { return; }
+
+    switch (msg.type) {
+      case 'message':      handleIncoming(msg);   break;
+      case 'system':       appendSystemMsg(msg.text); break;
+      case 'active-users': renderActiveUsers(msg.users); break;
+      case 'typing':       handleTypingEvent(msg); break;
+      case 'error':        showConnToast(msg.text); break;
+    }
+  });
+
+  ws.addEventListener('close', () => {
+    showConnToast('Disconnected. Reconnecting…');
+    setTimeout(connectWebSocket, 3000);
+  });
+
+  ws.addEventListener('error', () => {
+    showConnToast('Connection error. Retrying…');
+  });
+}
+
+/** Safe send — only if socket is open */
+function wsSend(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+// ══════════════════════════════════════════════════════════
+//  MESSAGE HANDLING
+// ══════════════════════════════════════════════════════════
+
+/** A new chat message arrived from the server */
+function handleIncoming(msg) {
+  const isMe = msg.userId === myUserId;
+  appendMessage(msg, true);
+  if (!isMe) playPop();
+}
+
+/** Build and insert a message bubble */
+function appendMessage(msg, animate = true) {
+  const isMe    = msg.userId === myUserId;
+  const msgWrap = document.getElementById('messages');
+
+  // Create row
+  const row = document.createElement('div');
+  row.className = `msg-row ${isMe ? 'me' : 'them'}`;
+  if (!animate) row.style.animation = 'none';
+
+  // Sender label (only for others)
+  if (!isMe) {
+    const sender = document.createElement('div');
+    sender.className = 'msg-sender';
+    sender.textContent = escapeHTML(msg.username);
+    row.appendChild(sender);
   }
 
-  scrollToBottom();
-  document.getElementById('msgInput').focus();
-}
+  // Bubble
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = msg.text;   // textContent is safe (no XSS)
+  row.appendChild(bubble);
 
-// ── Append a bubble to the messages area ─────────────────
-function appendMessage(side, text, isoTime, skipAnim = false) {
-  const messages = document.getElementById('messages');
-  const div      = document.createElement('div');
-  div.className  = `msg ${side}` + (skipAnim ? ' no-anim' : '');
+  // Timestamp
+  const time = document.createElement('div');
+  time.className = 'msg-time';
+  time.textContent = formatTime(msg.time);
+  row.appendChild(time);
 
-  const timeStr = isoTime
-    ? new Date(isoTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
-  div.innerHTML = `
-    <div class="bubble">${escapeHTML(text)}</div>
-    <span class="msg-time">${timeStr}</span>`;
-
-  messages.appendChild(div);
+  msgWrap.appendChild(row);
   scrollToBottom();
 }
 
-// ── Send a chat message ───────────────────────────────────
+/** System message (join/leave/rename) */
+function appendSystemMsg(text) {
+  const chip = document.createElement('div');
+  chip.className = 'msg-system';
+  chip.textContent = text;
+  document.getElementById('messages').appendChild(chip);
+  scrollToBottom();
+}
+
+/** Date separator chip */
+function appendDateChip(label) {
+  const chip = document.createElement('div');
+  chip.className = 'msg-date';
+  chip.textContent = label;
+  document.getElementById('messages').appendChild(chip);
+}
+
+/** Smooth-scroll to latest message */
+function scrollToBottom() {
+  const el = document.getElementById('messagesWrap');
+  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+}
+
+// ══════════════════════════════════════════════════════════
+//  SENDING MESSAGES
+// ══════════════════════════════════════════════════════════
 function sendMessage() {
   const input = document.getElementById('msgInput');
   const text  = input.value.trim();
-  if (!text || !activeFriend) return;
+  if (!text) return;
 
-  // Emit to server (server echoes back to us AND delivers to receiver)
-  socket.emit('chat-message', {
-    senderCode:   me.code,
-    receiverCode: activeFriend.code,
-    text,
-  });
+  wsSend({ type: 'message', text });
 
   // Stop typing indicator
-  socket.emit('typing', { senderCode: me.code, receiverCode: activeFriend.code, isTyping: false });
+  if (wasTyping) {
+    wsSend({ type: 'typing', isTyping: false });
+    wasTyping = false;
+  }
 
   input.value = '';
   input.style.height = 'auto';
+  updateSendBtn();
+  updateCharCount('');
+  input.focus();
 }
 
-// ── Handle Enter key in textarea ─────────────────────────
-function handleKey(e) {
+function handleMsgKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
   }
-  // Auto-resize textarea
-  const ta = document.getElementById('msgInput');
-  ta.style.height = 'auto';
-  ta.style.height = ta.scrollHeight + 'px';
+  autoResize(e.target);
 }
 
-// ── Typing indicator emission ─────────────────────────────
-function handleTyping() {
-  // Auto-resize textarea
-  const ta = document.getElementById('msgInput');
-  ta.style.height = 'auto';
-  ta.style.height = ta.scrollHeight + 'px';
+function handleTypingInput() {
+  const input = document.getElementById('msgInput');
+  autoResize(input);
+  updateSendBtn();
+  updateCharCount(input.value);
 
-  if (!activeFriend) return;
-  socket.emit('typing', { senderCode: me.code, receiverCode: activeFriend.code, isTyping: true });
-
-  // Clear typing after 2s of no input
-  clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => {
-    socket.emit('typing', { senderCode: me.code, receiverCode: activeFriend.code, isTyping: false });
+  // Emit typing: true (debounced — stop after 2s of no typing)
+  if (!wasTyping) {
+    wsSend({ type: 'typing', isTyping: true });
+    wasTyping = true;
+  }
+  clearTimeout(typingTO);
+  typingTO = setTimeout(() => {
+    wsSend({ type: 'typing', isTyping: false });
+    wasTyping = false;
   }, 2000);
 }
 
-// ── Smooth scroll to bottom of messages ──────────────────
-function scrollToBottom() {
-  const el = document.getElementById('messages');
-  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 140) + 'px';
 }
 
-// ── Escape HTML to prevent XSS ───────────────────────────
+function updateSendBtn() {
+  const btn = document.getElementById('sendBtn');
+  const val = document.getElementById('msgInput').value.trim();
+  btn.disabled = !val;
+}
+
+function updateCharCount(val) {
+  const el = document.getElementById('charCount');
+  if (val.length > 1800) {
+    el.textContent = `${val.length} / 2000`;
+  } else {
+    el.textContent = '';
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  TYPING INDICATOR
+// ══════════════════════════════════════════════════════════
+const typingUsers = new Map(); // userId → username
+let typingClearTO = null;
+
+function handleTypingEvent({ userId, username, isTyping }) {
+  if (isTyping) {
+    typingUsers.set(userId, username);
+  } else {
+    typingUsers.delete(userId);
+  }
+  renderTypingBar();
+}
+
+function renderTypingBar() {
+  const bar = document.getElementById('typingBar');
+  if (typingUsers.size === 0) { bar.innerHTML = ''; return; }
+
+  const names = [...typingUsers.values()].slice(0, 3).join(', ');
+  const verb  = typingUsers.size === 1 ? 'is' : 'are';
+  bar.innerHTML = `
+    <span class="typing-dots">
+      <span></span><span></span><span></span>
+    </span>
+    ${escapeHTML(names)} ${verb} typing…`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  ACTIVE USERS
+// ══════════════════════════════════════════════════════════
+function renderActiveUsers(users) {
+  const list  = document.getElementById('activeUserList');
+  const count = users.length;
+
+  document.getElementById('onlineCount').textContent  = count;
+  document.getElementById('topbarCount').textContent  = count;
+
+  list.innerHTML = '';
+  users.forEach(u => {
+    const pill = document.createElement('div');
+    pill.className = 'user-pill';
+    const isMe = u.userId === myUserId;
+    pill.innerHTML = `
+      <div class="user-pill-dot"></div>
+      <span class="user-pill-name">${escapeHTML(u.username)}</span>
+      ${isMe ? '<span class="user-pill-you">(you)</span>' : ''}`;
+    list.appendChild(pill);
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  USERNAME EDITING
+// ══════════════════════════════════════════════════════════
+function startEditUsername() {
+  const display = document.getElementById('usernameDisplay');
+  const edit    = document.getElementById('usernameEdit');
+  const input   = document.getElementById('usernameInput');
+
+  display.classList.add('hidden');
+  edit.classList.remove('hidden');
+  input.value = myUsername;
+  input.focus();
+  input.select();
+}
+
+function handleUsernameKey(e) {
+  if (e.key === 'Enter')  { e.preventDefault(); saveUsername(); }
+  if (e.key === 'Escape') { cancelEdit(); }
+}
+
+function cancelEdit() {
+  document.getElementById('usernameDisplay').classList.remove('hidden');
+  document.getElementById('usernameEdit').classList.add('hidden');
+}
+
+async function saveUsername() {
+  const input = document.getElementById('usernameInput');
+  const name  = input.value.trim();
+  if (!name) return;
+
+  try {
+    const res  = await fetch('/api/username', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: myUserId, username: name }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showConnToast(data.error || 'Could not rename.'); return; }
+
+    myUsername = data.username;
+    document.getElementById('usernameText').textContent  = myUsername;
+    document.getElementById('profileAvatar').textContent = myUsername.charAt(0).toUpperCase();
+    savePrefs({ username: myUsername });
+    cancelEdit();
+  } catch {
+    showConnToast('Rename failed.');
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  SIDEBAR TOGGLE (mobile)
+// ══════════════════════════════════════════════════════════
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
+// Close sidebar when clicking outside on mobile
+document.addEventListener('click', (e) => {
+  const sidebar = document.getElementById('sidebar');
+  const toggle  = document.querySelector('.sidebar-toggle');
+  if (sidebar?.classList.contains('open') && !sidebar.contains(e.target) && !toggle?.contains(e.target)) {
+    sidebar.classList.remove('open');
+  }
+});
+
+// ══════════════════════════════════════════════════════════
+//  LEAVE
+// ══════════════════════════════════════════════════════════
+function leaveChat() {
+  if (ws) ws.close();
+  document.getElementById('appScreen').classList.remove('active');
+  document.getElementById('landingScreen').classList.add('active');
+  document.getElementById('messages').innerHTML = '';
+}
+
+// ══════════════════════════════════════════════════════════
+//  CONNECTION TOAST
+// ══════════════════════════════════════════════════════════
+let connToastTO = null;
+function showConnToast(msg) {
+  const el = document.getElementById('connToast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(connToastTO);
+  connToastTO = setTimeout(hideConnToast, 4000);
+}
+function hideConnToast() {
+  document.getElementById('connToast')?.classList.remove('show');
+}
+
+// ══════════════════════════════════════════════════════════
+//  UTILITIES
+// ══════════════════════════════════════════════════════════
+/** Prevent XSS when inserting user content as HTML */
 function escapeHTML(str) {
   const d = document.createElement('div');
-  d.appendChild(document.createTextNode(str));
+  d.appendChild(document.createTextNode(str || ''));
   return d.innerHTML;
 }
 
-// ============================================================
-//  UTILITIES
-// ============================================================
-
-// ── Copy user code to clipboard ───────────────────────────
-function copyCode() {
-  navigator.clipboard.writeText(me.code).then(() => showToast(`Copied ${me.code} to clipboard! 📋`));
+/** Format ISO timestamp → "9:41 AM" */
+function formatTime(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  } catch { return ''; }
 }
 
-// ── Toast notification ─────────────────────────────────────
-let toastTimer = null;
-function showToast(msg) {
-  const toast = document.getElementById('toast');
-  toast.textContent = msg;
-  toast.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
-}
+// ══════════════════════════════════════════════════════════
+//  INIT — runs on page load
+// ══════════════════════════════════════════════════════════
+applyPrefs();
 
-// ── Dark / Light theme toggle ─────────────────────────────
-function toggleTheme() {
-  const html    = document.documentElement;
-  const current = html.getAttribute('data-theme');
-  const next    = current === 'dark' ? 'light' : 'dark';
-  html.setAttribute('data-theme', next);
-  localStorage.setItem('bubble-theme', next);
-  document.getElementById('themeBtn').textContent = next === 'dark' ? '☀︎' : '☽';
+// Pre-fill name field from prefs so returning users just hit Enter
+const prefs = loadPrefs();
+if (prefs.username) {
+  document.getElementById('joinUsername').value = prefs.username;
 }
-
-// Restore saved theme on load
-(function initTheme() {
-  const saved = localStorage.getItem('bubble-theme');
-  if (saved) {
-    document.documentElement.setAttribute('data-theme', saved);
-    // Wait for DOM to be ready before updating button
-    window.addEventListener('DOMContentLoaded', () => {
-      const btn = document.getElementById('themeBtn');
-      if (btn) btn.textContent = saved === 'dark' ? '☀︎' : '☽';
-    });
-  }
-})();
