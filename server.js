@@ -1,8 +1,24 @@
 // ═══════════════════════════════════════════════════════════
-//  Sora Chat — server.js
-//  Express HTTP server + native WebSocket (ws library)
-//  In-memory storage: users, messages, active connections
+//  Connector — server.js
+//
+//  REST endpoints consumed by script.js:
+//    POST  /api/join      { username, avatar, age, gender, location, about, userId? }
+//    PATCH /api/username  { userId, username, avatar, age, gender, location, about }
+//
+//  WebSocket messages  client → server:
+//    { type: 'register', userId }
+//    { type: 'message',  text }
+//    { type: 'typing',   isTyping: true|false }
+//
+//  WebSocket messages  server → client:
+//    { type: 'message',      id, userId, username, avatar, age, gender, location, about, text, time }
+//    { type: 'system',       text }
+//    { type: 'active-users', users: [ publicUser, … ] }
+//    { type: 'typing',       userId, username, isTyping }
+//    { type: 'error',        text }
 // ═══════════════════════════════════════════════════════════
+
+'use strict';
 
 const express   = require('express');
 const http      = require('http');
@@ -12,31 +28,31 @@ const crypto    = require('crypto');
 
 const app    = express();
 const server = http.createServer(app);
+const wss    = new WebSocket.Server({ server });
 
-// Attach WebSocket server to the same HTTP server
-const wss = new WebSocket.Server({ server });
-
+// ── Middleware ────────────────────────────────────────────
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── In-memory stores ──────────────────────────────────────
-// users   : Map<userId, { userId, username, joinedAt }>
-// messages: Array<{ id, userId, username, text, time }>
-// clients : Map<ws, userId>   ← which socket belongs to which user
+// users    Map<userId, { userId, username, avatar, age, gender, location, about, joinedAt }>
+// messages Array of message objects, capped at MAX_HISTORY
+// clients  Map<ws, userId>  which socket belongs to which user
 
-const users    = new Map();   // registered/active users
-const messages = [];          // chat history (last 200 kept)
-const clients  = new Map();   // ws → userId
+const users    = new Map();
+const messages = [];
+const clients  = new Map();
 
 const MAX_HISTORY = 200;
 
 // ── Helpers ───────────────────────────────────────────────
-// Generate a short random ID like "u_4f2a"
+
+/** Short random ID e.g. "u_3fa2c1b0" */
 function makeId(prefix = 'u') {
-  return `${prefix}_${crypto.randomBytes(3).toString('hex')}`;
+  return `${prefix}_${crypto.randomBytes(4).toString('hex')}`;
 }
 
-// Broadcast a JSON payload to ALL connected clients
+/** Send JSON payload to every open client */
 function broadcast(data) {
   const text = JSON.stringify(data);
   wss.clients.forEach(ws => {
@@ -44,128 +60,239 @@ function broadcast(data) {
   });
 }
 
-// Broadcast to everyone EXCEPT one specific socket
-function broadcastExcept(data, excludeWs) {
+/** Send JSON payload to every open client except one */
+function broadcastExcept(data, skipWs) {
   const text = JSON.stringify(data);
   wss.clients.forEach(ws => {
-    if (ws !== excludeWs && ws.readyState === WebSocket.OPEN) ws.send(text);
+    if (ws !== skipWs && ws.readyState === WebSocket.OPEN) ws.send(text);
   });
 }
 
-// Send JSON to a single socket
-function send(ws, data) {
+/** Send JSON to a single socket */
+function sendTo(ws, data) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
 }
 
-// Return a list of active users (safe, no sensitive data)
-function activeUserList() {
-  return [...clients.entries()].map(([, uid]) => {
-    const u = users.get(uid);
-    return u ? { userId: u.userId, username: u.username } : null;
-  }).filter(Boolean);
+/**
+ * The subset of user data that is safe to broadcast publicly.
+ * Matches exactly what script.js reads when it calls renderUserList()
+ * and showUserCard(): userId, username, avatar, age, gender, location, about.
+ */
+function publicUser(u) {
+  return {
+    userId:   u.userId,
+    username: u.username,
+    avatar:   u.avatar   || '😎',
+    age:      u.age      || '',
+    gender:   u.gender   || '',
+    location: u.location || '',
+    about:    u.about    || '',
+  };
 }
 
-// ── REST: Join (create or resume a session) ───────────────
-// POST /api/join  { username? }  → { userId, username, history }
+/** Array of public user objects for everyone currently connected */
+function activeUserList() {
+  return [...clients.values()]
+    .map(uid => {
+      const u = users.get(uid);
+      return u ? publicUser(u) : null;
+    })
+    .filter(Boolean);
+}
+
+// ── POST /api/join ────────────────────────────────────────
+// Called by joinChat() in script.js.
+// Body   : { username, avatar, age, gender, location, about, userId? }
+// Returns: { userId, username, history }
 app.post('/api/join', (req, res) => {
-  let { username, userId } = req.body;
+  let {
+    username = '',
+    avatar   = '😎',
+    age      = '',
+    gender   = '',
+    location = '',
+    about    = '',
+    userId   = null,
+  } = req.body;
 
-  // Validate / sanitise username
-  username = (username || '').trim().slice(0, 24) || `Guest${Math.floor(Math.random() * 9000) + 1000}`;
+  // Sanitise every field
+  username = String(username).trim().slice(0, 24);
+  avatar   = String(avatar).slice(0, 8);
+  age      = String(age).slice(0, 3);
+  gender   = String(gender).slice(0, 32);
+  location = String(location).slice(0, 40);
+  about    = String(about).slice(0, 160);
 
-  // If the client is rejoining with a known ID, update their name
-  if (userId && users.has(userId)) {
-    users.get(userId).username = username;
-  } else {
-    userId = makeId('u');
-    users.set(userId, { userId, username, joinedAt: Date.now() });
+  // Default username if blank
+  if (!username) {
+    username = `Guest${Math.floor(Math.random() * 9000) + 1000}`;
   }
 
-  console.log(`[join] ${username} (${userId})`);
+  if (userId && users.has(userId)) {
+    // Returning user — update their stored profile
+    const u = users.get(userId);
+    u.username = username;
+    u.avatar   = avatar;
+    u.age      = age;
+    u.gender   = gender;
+    u.location = location;
+    u.about    = about;
+  } else {
+    // Brand-new user — assign a fresh ID
+    userId = makeId('u');
+    users.set(userId, {
+      userId,
+      username,
+      avatar,
+      age,
+      gender,
+      location,
+      about,
+      joinedAt: Date.now(),
+    });
+  }
 
+  console.log(`[join]  ${username}  (${userId})`);
+
+  // Return last 60 messages as join history
   res.json({
     userId,
     username,
-    history: messages.slice(-60), // last 60 messages on join
+    history: messages.slice(-60),
   });
 });
 
-// REST: Update username mid-session
-// PATCH /api/username  { userId, username }
+// ── PATCH /api/username ───────────────────────────────────
+// Called by saveProfileEdit() in script.js.
+// Body   : { userId, username, avatar, age, gender, location, about }
+// Returns: { ok: true, username }
 app.patch('/api/username', (req, res) => {
-  const { userId, username } = req.body;
-  const clean = (username || '').trim().slice(0, 24);
-  if (!clean) return res.status(400).json({ error: 'Empty username.' });
-  if (!users.has(userId)) return res.status(404).json({ error: 'User not found.' });
+  const {
+    userId,
+    username = '',
+    avatar   = '😎',
+    age      = '',
+    gender   = '',
+    location = '',
+    about    = '',
+  } = req.body;
 
-  const old = users.get(userId).username;
-  users.get(userId).username = clean;
+  const cleanName = String(username).trim().slice(0, 24);
+  if (!cleanName) {
+    return res.status(400).json({ error: 'Username cannot be empty.' });
+  }
 
-  // Tell everyone about the rename
-  broadcast({ type: 'system', text: `✏️ ${old} is now ${clean}` });
+  const u = users.get(userId);
+  if (!u) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  const oldName = u.username;
+
+  // Apply all profile changes
+  u.username = cleanName;
+  u.avatar   = String(avatar).slice(0, 8);
+  u.age      = String(age).slice(0, 3);
+  u.gender   = String(gender).slice(0, 32);
+  u.location = String(location).slice(0, 40);
+  u.about    = String(about).slice(0, 160);
+
+  // Broadcast rename notice + refreshed user list
+  if (oldName !== cleanName) {
+    broadcast({ type: 'system', text: `✏️  ${oldName} is now ${cleanName}` });
+  }
   broadcast({ type: 'active-users', users: activeUserList() });
 
-  res.json({ ok: true, username: clean });
+  res.json({ ok: true, username: cleanName });
 });
 
-// ── WebSocket Connection ──────────────────────────────────
-wss.on('connection', (ws, req) => {
-  console.log('[ws] new connection');
+// ── WebSocket connection ──────────────────────────────────
+wss.on('connection', (ws) => {
+  console.log('[ws]  new connection');
 
-  // ── Incoming message handler ───────────────────────────
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
     switch (msg.type) {
 
-      // Client identifies themselves after connecting
+      // ── register ────────────────────────────────────
+      // script.js sends this as the very first message after
+      // the socket opens, passing the userId from /api/join.
       case 'register': {
         const user = users.get(msg.userId);
-        if (!user) { send(ws, { type: 'error', text: 'Unknown user. Please refresh.' }); return; }
+        if (!user) {
+          sendTo(ws, { type: 'error', text: 'Unknown user — please refresh the page.' });
+          return;
+        }
 
         clients.set(ws, msg.userId);
         ws.userId = msg.userId;
 
-        // Welcome this client
-        send(ws, { type: 'system', text: `Welcome back, ${user.username}! 👋` });
+        // Welcome message visible only to the joining user
+        sendTo(ws, {
+          type: 'system',
+          text: `Welcome, ${user.username}! 👋  Say hello to everyone.`,
+        });
 
-        // Tell everyone they joined
-        broadcastExcept({ type: 'system', text: `${user.username} joined the chat 🌿` }, ws);
+        // Announce join to everyone else
+        broadcastExcept({
+          type: 'system',
+          text: `${user.username} joined the room 🟢`,
+        }, ws);
 
-        // Push current active users to everyone
+        // Push updated online list to ALL clients (including the new one)
         broadcast({ type: 'active-users', users: activeUserList() });
         break;
       }
 
-      // Chat message
+      // ── message ─────────────────────────────────────
       case 'message': {
-        const user = clients.has(ws) ? users.get(clients.get(ws)) : null;
+        const uid  = clients.get(ws);
+        const user = uid ? users.get(uid) : null;
         if (!user) return;
 
-        const text = (msg.text || '').trim().slice(0, 2000);
+        const text = String(msg.text || '').trim().slice(0, 2000);
         if (!text) return;
 
+        // Build the full entry — includes all profile fields so that
+        // script.js can display avatar + sender name in the bubble and
+        // show the full card when a user's name is clicked.
         const entry = {
           id:       makeId('m'),
           userId:   user.userId,
           username: user.username,
+          avatar:   user.avatar   || '😎',
+          age:      user.age      || '',
+          gender:   user.gender   || '',
+          location: user.location || '',
+          about:    user.about    || '',
           text,
           time:     new Date().toISOString(),
         };
 
+        // Persist and cap
         messages.push(entry);
-        if (messages.length > MAX_HISTORY) messages.shift(); // keep rolling window
+        if (messages.length > MAX_HISTORY) messages.shift();
 
+        // Fan out to everyone including the sender
         broadcast({ type: 'message', ...entry });
         break;
       }
 
-      // Typing indicator
+      // ── typing ──────────────────────────────────────
       case 'typing': {
-        const user = clients.has(ws) ? users.get(clients.get(ws)) : null;
+        const uid  = clients.get(ws);
+        const user = uid ? users.get(uid) : null;
         if (!user) return;
-        broadcastExcept({ type: 'typing', userId: user.userId, username: user.username, isTyping: msg.isTyping }, ws);
+
+        // Relay to everyone except the sender
+        broadcastExcept({
+          type:     'typing',
+          userId:   user.userId,
+          username: user.username,
+          isTyping: !!msg.isTyping,
+        }, ws);
         break;
       }
 
@@ -174,24 +301,26 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  // ── Client disconnected ────────────────────────────────
+  // ── Disconnect ────────────────────────────────────────
   ws.on('close', () => {
     const uid  = clients.get(ws);
     const user = uid ? users.get(uid) : null;
     clients.delete(ws);
 
     if (user) {
-      console.log(`[ws] ${user.username} disconnected`);
-      broadcast({ type: 'system', text: `${user.username} left the chat 👋` });
+      console.log(`[ws]  ${user.username} disconnected`);
+      broadcast({ type: 'system',       text:  `${user.username} left the room 🔴` });
       broadcast({ type: 'active-users', users: activeUserList() });
     }
   });
 
-  ws.on('error', (err) => console.error('[ws error]', err.message));
+  ws.on('error', (err) => {
+    console.error('[ws error]', err.message);
+  });
 });
 
 // ── Start ─────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n🌿  Sora Chat running → http://localhost:${PORT}\n`);
+  console.log(`\n⚡  Connector  →  http://localhost:${PORT}\n`);
 });

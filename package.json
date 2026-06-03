@@ -1,7 +1,7 @@
 {
-  "name": "sora-chat",
-  "version": "2.0.0",
-  "description": "A polished real-time WebSocket chat app",
+  "name": "connector",
+  "version": "1.0.0",
+  "description": "Connector — real-time chat app",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,5 +10,8 @@
   "dependencies": {
     "express": "^4.18.2",
     "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=16"
   }
 }

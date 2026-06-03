@@ -1,189 +1,253 @@
-// ═══════════════════════════════════════════════════════════
-//  Sora Chat — script.js
-//  Handles: join flow, WebSocket lifecycle, messaging,
-//           username editing, theme/accent/sound prefs,
-//           active users, typing indicator
-// ═══════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════
+   Connector — script.js
+   Handles: join, WebSocket, messaging, profiles, themes,
+            emoji picker, typing indicator, modals, toasts
+   ═══════════════════════════════════════════════════════════ */
 
-// ── State ─────────────────────────────────────────────────
-let ws        = null;       // WebSocket connection
-let myUserId  = null;       // assigned by server
-let myUsername= '';         // current display name
-let typingTO  = null;       // debounce timer for typing events
-let wasTyping = false;      // track last typing state sent
+'use strict';
 
-// ── Audio (soft pop for incoming messages) ────────────────
-// Created lazily on first interaction to comply with browser autoplay policy
+// ── State ──────────────────────────────────────────────────
+let ws           = null;        // WebSocket instance
+let myUserId     = null;        // server-assigned ID
+let myUsername   = '';
+let myAvatar     = '😎';
+let myAge        = '';
+let myGender     = '';
+let myLocation   = '';
+let myAbout      = '';
+
+let selectedAvatar  = '😎';    // currently highlighted in pickers
+let typingTimer     = null;
+let wasTyping       = false;
+let emojiOpen       = false;
+
+// ── Audio ──────────────────────────────────────────────────
 let audioCtx = null;
-
 function playPop() {
+  if (!document.getElementById('soundToggle')?.checked) return;
   try {
-    if (!document.getElementById('soundToggle')?.checked) return;
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc  = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.type    = 'sine';
-    osc.frequency.setValueAtTime(660, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.08);
-    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.15);
-  } catch { /* silence audio errors */ }
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(700, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(480, audioCtx.currentTime + 0.07);
+    g.gain.setValueAtTime(0.10, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.14);
+    o.start(); o.stop(audioCtx.currentTime + 0.14);
+  } catch { /* silently ignore */ }
 }
 
 // ══════════════════════════════════════════════════════════
-//  PREFERENCES  (localStorage)
+//  PREFERENCES (localStorage)
 // ══════════════════════════════════════════════════════════
-const PREF_KEY = 'sora_prefs';
+const PREF_KEY = 'connector_prefs';
 
 function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; }
 }
-function savePrefs(patch) {
-  const prefs = { ...loadPrefs(), ...patch };
+function savePrefs(extra = {}) {
+  const prefs = {
+    ...loadPrefs(),
+    theme:    document.documentElement.getAttribute('data-theme'),
+    accent:   document.documentElement.getAttribute('data-accent'),
+    sound:    document.getElementById('soundToggle')?.checked ?? false,
+    username: myUsername,
+    avatar:   myAvatar,
+    age:      myAge,
+    gender:   myGender,
+    location: myLocation,
+    about:    myAbout,
+    userId:   myUserId,
+    ...extra,
+  };
   localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
 }
 
-/** Call whenever a setting widget changes — reads current UI state and persists */
-function savePref() {
-  savePrefs({
-    sound: document.getElementById('soundToggle')?.checked ?? false,
-  });
-}
-
-/** Apply all saved prefs to the DOM on page load */
 function applyPrefs() {
   const p = loadPrefs();
 
-  // Stored username / userId
-  if (p.username) document.getElementById('joinUsername').value = p.username;
-
   // Theme
-  const theme = p.theme || 'light';
+  const theme = p.theme || 'dark';
   document.documentElement.setAttribute('data-theme', theme);
-  syncThemeButtons(theme);
+  syncThemeUI(theme);
 
   // Accent
-  const accent = p.accent || 'sage';
+  const accent = p.accent || 'violet';
   document.documentElement.setAttribute('data-accent', accent);
-  syncAccentDots(accent);
+  syncAccentUI(accent);
 
   // Sound
   const soundEl = document.getElementById('soundToggle');
   if (soundEl) soundEl.checked = p.sound ?? false;
+
+  // Prefill join form
+  if (p.username) document.getElementById('jUsername').value = p.username;
+  if (p.age)      document.getElementById('jAge').value      = p.age;
+  if (p.gender)   document.getElementById('jGender').value   = p.gender;
+  if (p.location) document.getElementById('jLocation').value = p.location;
+  if (p.about)    document.getElementById('jAbout').value    = p.about;
+
+  // Avatar
+  selectedAvatar = p.avatar || '😎';
+  highlightAvatarPicker('joinAvatarPicker', selectedAvatar);
 }
 
 // ══════════════════════════════════════════════════════════
-//  THEME TOGGLE
+//  THEME & ACCENT
 // ══════════════════════════════════════════════════════════
-function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme');
-  const next    = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  syncThemeButtons(next);
-  savePrefs({ theme: next });
+function setTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  syncThemeUI(t);
+  savePrefs();
 }
 
-function syncThemeButtons(theme) {
-  const label = theme === 'dark' ? '☀︎  Light' : '☽  Dark';
-  const moon  = theme === 'dark' ? '☀︎' : '☽';
-  const el = document.getElementById('themeBtn');
-  if (el) el.textContent = label;
-  const lb = document.getElementById('landingThemeBtn');
-  if (lb) lb.textContent = moon;
+function syncThemeUI(t) {
+  // Landing chips
+  document.querySelectorAll('.theme-chip').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === t);
+  });
+  // Sidebar seg buttons
+  const btnDark  = document.getElementById('btnDark');
+  const btnLight = document.getElementById('btnLight');
+  if (btnDark)  btnDark.classList.toggle('active',  t === 'dark');
+  if (btnLight) btnLight.classList.toggle('active', t === 'light');
 }
 
-// ══════════════════════════════════════════════════════════
-//  ACCENT
-// ══════════════════════════════════════════════════════════
-function setAccent(name) {
-  document.documentElement.setAttribute('data-accent', name);
-  syncAccentDots(name);
-  savePrefs({ accent: name });
+function setAccent(a) {
+  document.documentElement.setAttribute('data-accent', a);
+  syncAccentUI(a);
+  savePrefs();
 }
 
-function syncAccentDots(active) {
-  document.querySelectorAll('.dot').forEach(d => {
-    const match = d.classList.contains(`dot-${active}`);
-    d.classList.toggle('active', match);
-    d.setAttribute('aria-pressed', String(match));
+function syncAccentUI(a) {
+  document.querySelectorAll('.ac-dot').forEach(d => {
+    d.classList.toggle('active', d.dataset.ac === a);
+    d.setAttribute('aria-pressed', String(d.dataset.ac === a));
   });
 }
 
 // ══════════════════════════════════════════════════════════
-//  JOIN FLOW
+//  AVATAR PICKERS
+// ══════════════════════════════════════════════════════════
+function initAvatarPickers() {
+  ['joinAvatarPicker', 'peAvatarPicker'].forEach(id => {
+    const picker = document.getElementById(id);
+    if (!picker) return;
+    picker.querySelectorAll('.av-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedAvatar = btn.dataset.av;
+        highlightAvatarPicker(id, selectedAvatar);
+        // Keep both pickers in sync
+        ['joinAvatarPicker','peAvatarPicker'].forEach(oid => {
+          if (oid !== id) highlightAvatarPicker(oid, selectedAvatar);
+        });
+        // Update preview in profile editor
+        const peAv = document.getElementById('peAvatar');
+        if (peAv) peAv.textContent = selectedAvatar;
+      });
+    });
+  });
+}
+
+function highlightAvatarPicker(pickerId, av) {
+  const picker = document.getElementById(pickerId);
+  if (!picker) return;
+  picker.querySelectorAll('.av-opt').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.av === av);
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  JOIN
 // ══════════════════════════════════════════════════════════
 async function joinChat() {
-  const input    = document.getElementById('joinUsername');
+  const username = document.getElementById('jUsername').value.trim();
   const errorEl  = document.getElementById('joinError');
-  const username = input.value.trim();
-
   errorEl.textContent = '';
-  if (!username) { errorEl.textContent = 'Please enter your name.'; input.focus(); return; }
 
-  // Retrieve a previously assigned userId (so the server can recognise a reconnect)
-  const prefs  = loadPrefs();
-  const stored = prefs.userId || null;
+  if (!username) {
+    errorEl.textContent = 'Please enter a username.';
+    document.getElementById('jUsername').focus();
+    return;
+  }
+
+  // Collect profile fields
+  myUsername = username;
+  myAvatar   = selectedAvatar;
+  myAge      = document.getElementById('jAge').value.trim();
+  myGender   = document.getElementById('jGender').value;
+  myLocation = document.getElementById('jLocation').value.trim();
+  myAbout    = document.getElementById('jAbout').value.trim();
+
+  const prefs = loadPrefs();
+  const storedId = prefs.userId || null;
 
   try {
     const res  = await fetch('/api/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, userId: stored }),
+      body: JSON.stringify({
+        username:  myUsername,
+        avatar:    myAvatar,
+        age:       myAge,
+        gender:    myGender,
+        location:  myLocation,
+        about:     myAbout,
+        userId:    storedId,
+      }),
     });
     const data = await res.json();
-    if (!res.ok) { errorEl.textContent = data.error || 'Something went wrong.'; return; }
+    if (!res.ok) { errorEl.textContent = data.error || 'Could not join.'; return; }
 
-    myUserId   = data.userId;
-    myUsername = data.username;
+    myUserId = data.userId;
+    savePrefs();
 
-    savePrefs({ userId: myUserId, username: myUsername });
-
-    // Switch to app screen
     showApp(data.history || []);
   } catch {
-    errorEl.textContent = 'Could not connect. Is the server running?';
+    errorEl.textContent = 'Cannot reach server. Is it running?';
   }
 }
 
 // ══════════════════════════════════════════════════════════
-//  SHOW APP — called once after join
+//  SHOW APP
 // ══════════════════════════════════════════════════════════
 function showApp(history) {
-  document.getElementById('landingScreen').classList.remove('active');
+  document.getElementById('joinScreen').classList.remove('active');
   document.getElementById('appScreen').classList.add('active');
 
-  // Populate profile strip
-  document.getElementById('usernameText').textContent = myUsername;
-  document.getElementById('userIdText').textContent   = myUserId;
-  document.getElementById('profileAvatar').textContent = myUsername.charAt(0).toUpperCase();
+  refreshMyProfileUI();
 
   // Render history
-  const msgs = document.getElementById('messages');
-  msgs.innerHTML = '';
+  document.getElementById('messages').innerHTML = '';
   if (history.length > 0) {
     appendDateChip('Earlier');
-    history.forEach(m => appendMessage(m, false));
+    history.forEach(m => appendMessageDOM(m, false));
   }
-  scrollToBottom();
+  scrollBottom();
 
-  // Open WebSocket
-  connectWebSocket();
+  connectWS();
+}
+
+function refreshMyProfileUI() {
+  document.getElementById('sidebarAvatar').textContent = myAvatar;
+  document.getElementById('sidebarName').textContent   = myUsername;
+  document.getElementById('topbarAvatar').textContent  = myAvatar;
+
+  const parts = [myLocation, myAge ? `${myAge}y` : ''].filter(Boolean);
+  document.getElementById('sidebarMeta').textContent = parts.join(' · ') || 'Edit profile →';
 }
 
 // ══════════════════════════════════════════════════════════
 //  WEBSOCKET
 // ══════════════════════════════════════════════════════════
-function connectWebSocket() {
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${protocol}://${location.host}`);
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
 
   ws.addEventListener('open', () => {
-    hideConnToast();
-    // Register this socket as our user
+    hideBanner();
     wsSend({ type: 'register', userId: myUserId });
   });
 
@@ -192,99 +256,111 @@ function connectWebSocket() {
     try { msg = JSON.parse(data); } catch { return; }
 
     switch (msg.type) {
-      case 'message':      handleIncoming(msg);   break;
-      case 'system':       appendSystemMsg(msg.text); break;
-      case 'active-users': renderActiveUsers(msg.users); break;
-      case 'typing':       handleTypingEvent(msg); break;
-      case 'error':        showConnToast(msg.text); break;
+      case 'message':      handleIncoming(msg);         break;
+      case 'system':       appendSysMsg(msg.text);      break;
+      case 'active-users': renderUserList(msg.users);   break;
+      case 'typing':       handleTypingEvent(msg);      break;
+      case 'error':        showToast(msg.text);         break;
     }
   });
 
   ws.addEventListener('close', () => {
-    showConnToast('Disconnected. Reconnecting…');
-    setTimeout(connectWebSocket, 3000);
+    showBanner();
+    setTimeout(connectWS, 3000);
   });
 
-  ws.addEventListener('error', () => {
-    showConnToast('Connection error. Retrying…');
-  });
+  ws.addEventListener('error', () => showBanner());
 }
 
-/** Safe send — only if socket is open */
 function wsSend(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
 // ══════════════════════════════════════════════════════════
-//  MESSAGE HANDLING
+//  MESSAGES
 // ══════════════════════════════════════════════════════════
-
-/** A new chat message arrived from the server */
 function handleIncoming(msg) {
   const isMe = msg.userId === myUserId;
-  appendMessage(msg, true);
+  appendMessageDOM(msg, true);
   if (!isMe) playPop();
 }
 
-/** Build and insert a message bubble */
-function appendMessage(msg, animate = true) {
-  const isMe    = msg.userId === myUserId;
-  const msgWrap = document.getElementById('messages');
+/** Build and inject a message bubble */
+function appendMessageDOM(msg, animate) {
+  const isMe     = msg.userId === myUserId;
+  const msgWrap  = document.getElementById('messages');
 
-  // Create row
+  // Remove welcome placeholder if present
+  const welcome = msgWrap.querySelector('.chat-welcome');
+  if (welcome) welcome.remove();
+
   const row = document.createElement('div');
   row.className = `msg-row ${isMe ? 'me' : 'them'}`;
   if (!animate) row.style.animation = 'none';
 
-  // Sender label (only for others)
+  // Sender name (for others)
   if (!isMe) {
     const sender = document.createElement('div');
     sender.className = 'msg-sender';
-    sender.textContent = escapeHTML(msg.username);
+    sender.textContent = `${msg.avatar || ''} ${esc(msg.username)}`;
+    sender.onclick = () => showUserCard(msg);
     row.appendChild(sender);
   }
 
-  // Bubble
+  // Bubble wrapper (for copy button)
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble-wrap';
+
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = msg.text;   // textContent is safe (no XSS)
-  row.appendChild(bubble);
+  bubble.textContent = msg.text;
+
+  // Copy button
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'copy-btn';
+  copyBtn.title = 'Copy';
+  copyBtn.setAttribute('aria-label', 'Copy message');
+  copyBtn.textContent = '⎘';
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(msg.text).then(() => showToast('Copied!'));
+  };
+
+  wrap.appendChild(bubble);
+  wrap.appendChild(copyBtn);
+  row.appendChild(wrap);
 
   // Timestamp
   const time = document.createElement('div');
   time.className = 'msg-time';
-  time.textContent = formatTime(msg.time);
+  time.textContent = fmtTime(msg.time);
   row.appendChild(time);
 
   msgWrap.appendChild(row);
-  scrollToBottom();
+  scrollBottom();
 }
 
-/** System message (join/leave/rename) */
-function appendSystemMsg(text) {
-  const chip = document.createElement('div');
-  chip.className = 'msg-system';
-  chip.textContent = text;
-  document.getElementById('messages').appendChild(chip);
-  scrollToBottom();
+function appendSysMsg(text) {
+  const el = document.createElement('div');
+  el.className = 'sys-msg';
+  el.textContent = text;
+  document.getElementById('messages').appendChild(el);
+  scrollBottom();
 }
 
-/** Date separator chip */
 function appendDateChip(label) {
-  const chip = document.createElement('div');
-  chip.className = 'msg-date';
-  chip.textContent = label;
-  document.getElementById('messages').appendChild(chip);
+  const el = document.createElement('div');
+  el.className = 'date-chip';
+  el.textContent = label;
+  document.getElementById('messages').appendChild(el);
 }
 
-/** Smooth-scroll to latest message */
-function scrollToBottom() {
+function scrollBottom() {
   const el = document.getElementById('messagesWrap');
-  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
 }
 
 // ══════════════════════════════════════════════════════════
-//  SENDING MESSAGES
+//  SENDING
 // ══════════════════════════════════════════════════════════
 function sendMessage() {
   const input = document.getElementById('msgInput');
@@ -293,231 +369,318 @@ function sendMessage() {
 
   wsSend({ type: 'message', text });
 
-  // Stop typing indicator
-  if (wasTyping) {
-    wsSend({ type: 'typing', isTyping: false });
-    wasTyping = false;
-  }
+  if (wasTyping) { wsSend({ type: 'typing', isTyping: false }); wasTyping = false; }
+  clearTimeout(typingTimer);
 
   input.value = '';
   input.style.height = 'auto';
   updateSendBtn();
-  updateCharCount('');
   input.focus();
+
+  // Close emoji picker
+  if (emojiOpen) toggleEmojiPicker();
 }
 
 function handleMsgKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
   autoResize(e.target);
 }
 
 function handleTypingInput() {
-  const input = document.getElementById('msgInput');
-  autoResize(input);
+  autoResize(document.getElementById('msgInput'));
   updateSendBtn();
-  updateCharCount(input.value);
 
-  // Emit typing: true (debounced — stop after 2s of no typing)
-  if (!wasTyping) {
-    wsSend({ type: 'typing', isTyping: true });
-    wasTyping = true;
-  }
-  clearTimeout(typingTO);
-  typingTO = setTimeout(() => {
-    wsSend({ type: 'typing', isTyping: false });
-    wasTyping = false;
-  }, 2000);
+  if (!wasTyping) { wsSend({ type: 'typing', isTyping: true }); wasTyping = true; }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    wsSend({ type: 'typing', isTyping: false }); wasTyping = false;
+  }, 2200);
 }
 
 function autoResize(el) {
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  el.style.height = Math.min(el.scrollHeight, 130) + 'px';
 }
 
 function updateSendBtn() {
   const btn = document.getElementById('sendBtn');
   const val = document.getElementById('msgInput').value.trim();
   btn.disabled = !val;
-}
-
-function updateCharCount(val) {
-  const el = document.getElementById('charCount');
-  if (val.length > 1800) {
-    el.textContent = `${val.length} / 2000`;
-  } else {
-    el.textContent = '';
-  }
+  btn.style.opacity = val ? '1' : '0.38';
+  btn.style.pointerEvents = val ? 'auto' : 'none';
 }
 
 // ══════════════════════════════════════════════════════════
 //  TYPING INDICATOR
 // ══════════════════════════════════════════════════════════
-const typingUsers = new Map(); // userId → username
-let typingClearTO = null;
+const typingUsers = new Map();
 
 function handleTypingEvent({ userId, username, isTyping }) {
-  if (isTyping) {
-    typingUsers.set(userId, username);
-  } else {
-    typingUsers.delete(userId);
-  }
+  if (isTyping) typingUsers.set(userId, username);
+  else          typingUsers.delete(userId);
   renderTypingBar();
 }
 
 function renderTypingBar() {
   const bar = document.getElementById('typingBar');
   if (typingUsers.size === 0) { bar.innerHTML = ''; return; }
-
   const names = [...typingUsers.values()].slice(0, 3).join(', ');
   const verb  = typingUsers.size === 1 ? 'is' : 'are';
   bar.innerHTML = `
-    <span class="typing-dots">
-      <span></span><span></span><span></span>
-    </span>
-    ${escapeHTML(names)} ${verb} typing…`;
+    <span class="t-dots"><span></span><span></span><span></span></span>
+    ${esc(names)} ${verb} typing…`;
 }
 
 // ══════════════════════════════════════════════════════════
-//  ACTIVE USERS
+//  ACTIVE USERS LIST
 // ══════════════════════════════════════════════════════════
-function renderActiveUsers(users) {
-  const list  = document.getElementById('activeUserList');
-  const count = users.length;
+function renderUserList(users) {
+  document.getElementById('onlineCount').textContent = users.length;
+  document.getElementById('topbarSub').textContent   = `${users.length} online`;
 
-  document.getElementById('onlineCount').textContent  = count;
-  document.getElementById('topbarCount').textContent  = count;
-
+  const list = document.getElementById('userList');
   list.innerHTML = '';
-  users.forEach(u => {
+
+  users.forEach((u, i) => {
+    const isMe = u.userId === myUserId;
     const pill = document.createElement('div');
     pill.className = 'user-pill';
-    const isMe = u.userId === myUserId;
+    pill.style.animationDelay = `${i * 40}ms`;
     pill.innerHTML = `
-      <div class="user-pill-dot"></div>
-      <span class="user-pill-name">${escapeHTML(u.username)}</span>
-      ${isMe ? '<span class="user-pill-you">(you)</span>' : ''}`;
+      <span class="up-dot"></span>
+      <span class="up-av">${u.avatar || '👤'}</span>
+      <div class="up-info">
+        <p class="up-name">${esc(u.username)}</p>
+        ${u.location ? `<p class="up-loc">📍 ${esc(u.location)}</p>` : ''}
+      </div>
+      ${isMe ? '<span class="up-you">you</span>' : ''}`;
+    if (!isMe) pill.onclick = () => showUserCard(u);
     list.appendChild(pill);
   });
 }
 
 // ══════════════════════════════════════════════════════════
-//  USERNAME EDITING
+//  PROFILE EDITOR MODAL
 // ══════════════════════════════════════════════════════════
-function startEditUsername() {
-  const display = document.getElementById('usernameDisplay');
-  const edit    = document.getElementById('usernameEdit');
-  const input   = document.getElementById('usernameInput');
+function openProfileEditor() {
+  // Populate fields
+  document.getElementById('peUsername').value  = myUsername;
+  document.getElementById('peAge').value       = myAge;
+  document.getElementById('peGender').value    = myGender;
+  document.getElementById('peLocation').value  = myLocation;
+  document.getElementById('peAbout').value     = myAbout;
+  document.getElementById('peAvatar').textContent = myAvatar;
+  document.getElementById('peUserId').textContent = myUserId || '—';
+  highlightAvatarPicker('peAvatarPicker', myAvatar);
 
-  display.classList.add('hidden');
-  edit.classList.remove('hidden');
-  input.value = myUsername;
-  input.focus();
-  input.select();
+  document.getElementById('profileModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
 }
 
-function handleUsernameKey(e) {
-  if (e.key === 'Enter')  { e.preventDefault(); saveUsername(); }
-  if (e.key === 'Escape') { cancelEdit(); }
+function closeProfileEditor(e) {
+  if (e && e.target !== document.getElementById('profileModal')) return;
+  document.getElementById('profileModal').classList.add('hidden');
+  document.body.style.overflow = '';
 }
 
-function cancelEdit() {
-  document.getElementById('usernameDisplay').classList.remove('hidden');
-  document.getElementById('usernameEdit').classList.add('hidden');
-}
+async function saveProfileEdit() {
+  const name = document.getElementById('peUsername').value.trim();
+  if (!name) { showToast('Username cannot be empty.'); return; }
 
-async function saveUsername() {
-  const input = document.getElementById('usernameInput');
-  const name  = input.value.trim();
-  if (!name) return;
+  const oldName = myUsername;
+  myUsername = name;
+  myAvatar   = selectedAvatar;
+  myAge      = document.getElementById('peAge').value.trim();
+  myGender   = document.getElementById('peGender').value;
+  myLocation = document.getElementById('peLocation').value.trim();
+  myAbout    = document.getElementById('peAbout').value.trim();
 
   try {
-    const res  = await fetch('/api/username', {
+    await fetch('/api/username', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: myUserId, username: name }),
+      body: JSON.stringify({
+        userId:   myUserId,
+        username: myUsername,
+        avatar:   myAvatar,
+        age:      myAge,
+        gender:   myGender,
+        location: myLocation,
+        about:    myAbout,
+      }),
     });
-    const data = await res.json();
-    if (!res.ok) { showConnToast(data.error || 'Could not rename.'); return; }
+  } catch { /* offline — update locally only */ }
 
-    myUsername = data.username;
-    document.getElementById('usernameText').textContent  = myUsername;
-    document.getElementById('profileAvatar').textContent = myUsername.charAt(0).toUpperCase();
-    savePrefs({ username: myUsername });
-    cancelEdit();
-  } catch {
-    showConnToast('Rename failed.');
-  }
+  savePrefs();
+  refreshMyProfileUI();
+  document.getElementById('profileModal').classList.add('hidden');
+  document.body.style.overflow = '';
+  showToast('Profile saved ✓');
+}
+
+function copyUserId() {
+  const id = myUserId || '—';
+  navigator.clipboard.writeText(id).then(() => showToast(`ID copied: ${id}`));
 }
 
 // ══════════════════════════════════════════════════════════
-//  SIDEBAR TOGGLE (mobile)
+//  USER CARD POPUP
 // ══════════════════════════════════════════════════════════
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
+function showUserCard(user) {
+  document.getElementById('ucAvatar').textContent = user.avatar || '👤';
+  document.getElementById('ucName').textContent   = user.username || '—';
+  document.getElementById('ucId').textContent     = user.userId   || '—';
+  document.getElementById('ucAbout').textContent  = user.about    || '';
+
+  const tags = document.getElementById('ucTags');
+  tags.innerHTML = '';
+  [
+    user.age      ? `${user.age}y`       : null,
+    user.gender   || null,
+    user.location ? `📍 ${user.location}` : null,
+  ].filter(Boolean).forEach(t => {
+    const chip = document.createElement('span');
+    chip.className = 'uc-tag';
+    chip.textContent = t;
+    tags.appendChild(chip);
+  });
+
+  document.getElementById('userCardModal').classList.remove('hidden');
 }
 
-// Close sidebar when clicking outside on mobile
+function closeUserCard(e) {
+  if (e && e.target !== document.getElementById('userCardModal')) return;
+  document.getElementById('userCardModal').classList.add('hidden');
+}
+
+// ══════════════════════════════════════════════════════════
+//  EMOJI PICKER
+// ══════════════════════════════════════════════════════════
+const EMOJIS = [
+  '😀','😂','🥲','😍','🤩','😎','🥳','😭','😤','🤔',
+  '👋','🙌','👏','🤝','🫶','❤️','🔥','✨','🎉','💯',
+  '😂','🤣','😊','😇','🥰','😘','😜','🤪','😴','🤯',
+  '🍕','🍔','🍜','🧋','🎂','🍣','🌮','🥗','🧁','🍩',
+  '⚽','🏀','🎮','🎵','🎤','🏆','🎯','🎲','🃏','🎸',
+  '🌟','💫','⭐','🌈','🌊','🌸','🌺','🍀','🦋','🐱',
+  '💪','🙏','👍','👎','✌️','🤞','🫡','💀','🫠','🥹',
+];
+
+function buildEmojiGrid() {
+  const grid = document.getElementById('emojiGrid');
+  grid.innerHTML = '';
+  EMOJIS.forEach(em => {
+    const cell = document.createElement('button');
+    cell.className = 'emoji-cell';
+    cell.type = 'button';
+    cell.textContent = em;
+    cell.setAttribute('aria-label', em);
+    cell.onclick = () => insertEmoji(em);
+    grid.appendChild(cell);
+  });
+}
+
+function insertEmoji(em) {
+  const input = document.getElementById('msgInput');
+  const pos   = input.selectionStart;
+  const val   = input.value;
+  input.value = val.slice(0, pos) + em + val.slice(pos);
+  input.selectionStart = input.selectionEnd = pos + em.length;
+  input.focus();
+  updateSendBtn();
+  autoResize(input);
+}
+
+function toggleEmojiPicker() {
+  const picker = document.getElementById('emojiPicker');
+  emojiOpen = !emojiOpen;
+  picker.classList.toggle('hidden', !emojiOpen);
+}
+
+// Close emoji picker when clicking outside
 document.addEventListener('click', (e) => {
-  const sidebar = document.getElementById('sidebar');
-  const toggle  = document.querySelector('.sidebar-toggle');
-  if (sidebar?.classList.contains('open') && !sidebar.contains(e.target) && !toggle?.contains(e.target)) {
-    sidebar.classList.remove('open');
+  const picker  = document.getElementById('emojiPicker');
+  const emojiBtn = document.getElementById('emojiBtn');
+  if (emojiOpen && picker && !picker.contains(e.target) && !emojiBtn?.contains(e.target)) {
+    emojiOpen = false;
+    picker.classList.add('hidden');
   }
 });
 
 // ══════════════════════════════════════════════════════════
-//  LEAVE
+//  SIDEBAR (mobile)
 // ══════════════════════════════════════════════════════════
-function leaveChat() {
-  if (ws) ws.close();
-  document.getElementById('appScreen').classList.remove('active');
-  document.getElementById('landingScreen').classList.add('active');
-  document.getElementById('messages').innerHTML = '';
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('active');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('active');
 }
 
 // ══════════════════════════════════════════════════════════
-//  CONNECTION TOAST
+//  LEAVE ROOM
 // ══════════════════════════════════════════════════════════
-let connToastTO = null;
-function showConnToast(msg) {
-  const el = document.getElementById('connToast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(connToastTO);
-  connToastTO = setTimeout(hideConnToast, 4000);
+function leaveRoom() {
+  if (ws) ws.close();
+  document.getElementById('appScreen').classList.remove('active');
+  document.getElementById('joinScreen').classList.add('active');
+  document.getElementById('messages').innerHTML = '';
+  document.getElementById('userList').innerHTML = '';
 }
-function hideConnToast() {
-  document.getElementById('connToast')?.classList.remove('show');
+
+// ══════════════════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════════════════
+let toastTO = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  el.classList.add('show');
+  clearTimeout(toastTO);
+  toastTO = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ══════════════════════════════════════════════════════════
+//  CONNECTION BANNER
+// ══════════════════════════════════════════════════════════
+function showBanner() {
+  const el = document.getElementById('connBanner');
+  el.classList.remove('hidden');
+  el.classList.add('show');
+}
+function hideBanner() {
+  const el = document.getElementById('connBanner');
+  el.classList.remove('show');
 }
 
 // ══════════════════════════════════════════════════════════
 //  UTILITIES
 // ══════════════════════════════════════════════════════════
-/** Prevent XSS when inserting user content as HTML */
-function escapeHTML(str) {
+/** Safely escape HTML to prevent XSS */
+function esc(str) {
   const d = document.createElement('div');
   d.appendChild(document.createTextNode(str || ''));
   return d.innerHTML;
 }
 
 /** Format ISO timestamp → "9:41 AM" */
-function formatTime(iso) {
+function fmtTime(iso) {
   if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  } catch { return ''; }
+  try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+  catch { return ''; }
 }
 
 // ══════════════════════════════════════════════════════════
-//  INIT — runs on page load
+//  INIT
 // ══════════════════════════════════════════════════════════
 applyPrefs();
+initAvatarPickers();
+buildEmojiGrid();
 
-// Pre-fill name field from prefs so returning users just hit Enter
-const prefs = loadPrefs();
-if (prefs.username) {
-  document.getElementById('joinUsername').value = prefs.username;
-}
+// Make Enter work on join form naturally
+document.getElementById('jUsername')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') joinChat();
+});
