@@ -50,4 +50,3 @@ UptimeRobot          keeps it from sleeping
 
 hosted free on Render. UptimeRobot pings it every 5 min so it stays awake.
 
-*his code doesn't work — but this one does*
