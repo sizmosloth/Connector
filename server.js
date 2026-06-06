@@ -1,326 +1,316 @@
-// ═══════════════════════════════════════════════════════════
-//  Connector — server.js
-//
-//  REST endpoints consumed by script.js:
-//    POST  /api/join      { username, avatar, age, gender, location, about, userId? }
-//    PATCH /api/username  { userId, username, avatar, age, gender, location, about }
-//
-//  WebSocket messages  client → server:
-//    { type: 'register', userId }
-//    { type: 'message',  text }
-//    { type: 'typing',   isTyping: true|false }
-//
-//  WebSocket messages  server → client:
-//    { type: 'message',      id, userId, username, avatar, age, gender, location, about, text, time }
-//    { type: 'system',       text }
-//    { type: 'active-users', users: [ publicUser, … ] }
-//    { type: 'typing',       userId, username, isTyping }
-//    { type: 'error',        text }
-// ═══════════════════════════════════════════════════════════
+const express = require('express');
+const http = require('http');
+const { WebSocketServer } = require('ws');
+const crypto = require('crypto');
+const path = require('path');
 
-'use strict';
-
-const express   = require('express');
-const http      = require('http');
-const WebSocket = require('ws');
-const path      = require('path');
-const crypto    = require('crypto');
-
-const app    = express();
-const server = http.createServer(app);
-const wss    = new WebSocket.Server({ server });
-
-// ── Middleware ────────────────────────────────────────────
+const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── In-memory stores ──────────────────────────────────────
-// users    Map<userId, { userId, username, avatar, age, gender, location, about, joinedAt }>
-// messages Array of message objects, capped at MAX_HISTORY
-// clients  Map<ws, userId>  which socket belongs to which user
+// ── In-memory stores ──────────────────────────────────────────────────────────
+const users       = new Map(); // userId → fullUserObject
+const globalMsgs  = [];        // capped at 200
+const dmStore     = new Map(); // pairKey → []  capped at 200
+const clients     = new Map(); // ws → userId
+const pendingReqs = new Map(); // toUserId → Set<fromUserId>
+const acceptedPairs = new Set(); // pairKey
 
-const users    = new Map();
-const messages = [];
-const clients  = new Map();
+function pairKey(a, b) { return [a, b].sort().join('_'); }
 
-const MAX_HISTORY = 200;
-
-// ── Helpers ───────────────────────────────────────────────
-
-/** Short random ID e.g. "u_3fa2c1b0" */
-function makeId(prefix = 'u') {
-  return `${prefix}_${crypto.randomBytes(4).toString('hex')}`;
-}
-
-/** Send JSON payload to every open client */
-function broadcast(data) {
-  const text = JSON.stringify(data);
-  wss.clients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(text);
-  });
-}
-
-/** Send JSON payload to every open client except one */
-function broadcastExcept(data, skipWs) {
-  const text = JSON.stringify(data);
-  wss.clients.forEach(ws => {
-    if (ws !== skipWs && ws.readyState === WebSocket.OPEN) ws.send(text);
-  });
-}
-
-/** Send JSON to a single socket */
-function sendTo(ws, data) {
-  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
-}
-
-/**
- * The subset of user data that is safe to broadcast publicly.
- * Matches exactly what script.js reads when it calls renderUserList()
- * and showUserCard(): userId, username, avatar, age, gender, location, about.
- */
 function publicUser(u) {
-  return {
-    userId:   u.userId,
-    username: u.username,
-    avatar:   u.avatar   || '😎',
-    age:      u.age      || '',
-    gender:   u.gender   || '',
-    location: u.location || '',
-    about:    u.about    || '',
-  };
+  const { notes, ...pub } = u;
+  return pub;
 }
 
-/** Array of public user objects for everyone currently connected */
-function activeUserList() {
-  return [...clients.values()]
-    .map(uid => {
-      const u = users.get(uid);
-      return u ? publicUser(u) : null;
-    })
-    .filter(Boolean);
+function broadcast(data, excludeWs = null) {
+  const msg = JSON.stringify(data);
+  clients.forEach((uid, ws) => {
+    if (ws !== excludeWs && ws.readyState === 1) ws.send(msg);
+  });
 }
 
-// ── POST /api/join ────────────────────────────────────────
-// Called by joinChat() in script.js.
-// Body   : { username, avatar, age, gender, location, about, userId? }
-// Returns: { userId, username, history }
+function sendTo(userId, data) {
+  const msg = JSON.stringify(data);
+  clients.forEach((uid, ws) => {
+    if (uid === userId && ws.readyState === 1) ws.send(msg);
+  });
+}
+
+function capArray(arr, max) {
+  if (arr.length > max) arr.splice(0, arr.length - max);
+}
+
+// ── REST endpoints ────────────────────────────────────────────────────────────
+
+// POST /api/join
 app.post('/api/join', (req, res) => {
-  let {
-    username = '',
-    avatar   = '😎',
-    age      = '',
-    gender   = '',
-    location = '',
-    about    = '',
-    userId   = null,
-  } = req.body;
-
-  // Sanitise every field
-  username = String(username).trim().slice(0, 24);
-  avatar   = String(avatar).slice(0, 8);
-  age      = String(age).slice(0, 3);
-  gender   = String(gender).slice(0, 32);
-  location = String(location).slice(0, 40);
-  about    = String(about).slice(0, 160);
-
-  // Default username if blank
-  if (!username) {
-    username = `Guest${Math.floor(Math.random() * 9000) + 1000}`;
+  const { username, avatar, avatarBg, age, gender, pronouns,
+          location, about, bio, mood, website, notes, theme, fontSize, bubbleStyle } = req.body;
+  if (!username || typeof username !== 'string') {
+    return res.status(400).json({ error: 'username required' });
   }
-
-  if (userId && users.has(userId)) {
-    // Returning user — update their stored profile
-    const u = users.get(userId);
-    u.username = username;
-    u.avatar   = avatar;
-    u.age      = age;
-    u.gender   = gender;
-    u.location = location;
-    u.about    = about;
-  } else {
-    // Brand-new user — assign a fresh ID
-    userId = makeId('u');
-    users.set(userId, {
-      userId,
-      username,
-      avatar,
-      age,
-      gender,
-      location,
-      about,
-      joinedAt: Date.now(),
-    });
-  }
-
-  console.log(`[join]  ${username}  (${userId})`);
-
-  // Return last 60 messages as join history
-  res.json({
-    userId,
-    username,
-    history: messages.slice(-60),
-  });
+  const userId = crypto.randomBytes(8).toString('hex');
+  const user = {
+    userId, username: username.trim(), avatar: avatar || '😊', avatarBg: avatarBg || '#7c6af5',
+    age: age || null, gender: gender || '', pronouns: pronouns || '',
+    location: location || '', about: about || '', bio: bio || '',
+    mood: mood || '😊', website: website || '', notes: notes || '',
+    status: '', joinedAt: Date.now(), theme: theme || 'midnight',
+    fontSize: fontSize || 'medium', bubbleStyle: bubbleStyle || 'rounded'
+  };
+  users.set(userId, user);
+  res.json({ userId, username: user.username, history: globalMsgs.map(m => ({ ...m })) });
 });
 
-// ── PATCH /api/username ───────────────────────────────────
-// Called by saveProfileEdit() in script.js.
-// Body   : { userId, username, avatar, age, gender, location, about }
-// Returns: { ok: true, username }
-app.patch('/api/username', (req, res) => {
-  const {
-    userId,
-    username = '',
-    avatar   = '😎',
-    age      = '',
-    gender   = '',
-    location = '',
-    about    = '',
-  } = req.body;
+// PATCH /api/profile
+app.patch('/api/profile', (req, res) => {
+  const { userId, ...updates } = req.body;
+  if (!userId || !users.has(userId)) return res.status(404).json({ error: 'user not found' });
+  const user = users.get(userId);
+  const allowed = ['username','avatar','avatarBg','age','gender','pronouns',
+                   'location','about','bio','mood','website','notes','status',
+                   'theme','fontSize','bubbleStyle'];
+  allowed.forEach(k => { if (updates[k] !== undefined) user[k] = updates[k]; });
+  users.set(userId, user);
 
-  const cleanName = String(username).trim().slice(0, 24);
-  if (!cleanName) {
-    return res.status(400).json({ error: 'Username cannot be empty.' });
-  }
-
-  const u = users.get(userId);
-  if (!u) {
-    return res.status(404).json({ error: 'User not found.' });
-  }
-
-  const oldName = u.username;
-
-  // Apply all profile changes
-  u.username = cleanName;
-  u.avatar   = String(avatar).slice(0, 8);
-  u.age      = String(age).slice(0, 3);
-  u.gender   = String(gender).slice(0, 32);
-  u.location = String(location).slice(0, 40);
-  u.about    = String(about).slice(0, 160);
-
-  // Broadcast rename notice + refreshed user list
-  if (oldName !== cleanName) {
-    broadcast({ type: 'system', text: `✏️  ${oldName} is now ${cleanName}` });
-  }
-  broadcast({ type: 'active-users', users: activeUserList() });
-
-  res.json({ ok: true, username: cleanName });
+  // broadcast rename / profile update
+  broadcast({ type: 'profileUpdate', user: publicUser(user) });
+  res.json({ ok: true, username: user.username });
 });
 
-// ── WebSocket connection ──────────────────────────────────
+// GET /api/dm-history
+app.get('/api/dm-history', (req, res) => {
+  const { userId, peerId } = req.query;
+  if (!userId || !peerId) return res.status(400).json({ error: 'userId and peerId required' });
+  const key = pairKey(userId, peerId);
+  res.json({ messages: dmStore.get(key) || [] });
+});
+
+// GET /api/users
+app.get('/api/users', (req, res) => {
+  const list = [];
+  users.forEach(u => list.push(publicUser(u)));
+  res.json({ users: list });
+});
+
+// ── WebSocket server ──────────────────────────────────────────────────────────
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+
 wss.on('connection', (ws) => {
-  console.log('[ws]  new connection');
-
   ws.on('message', (raw) => {
-    let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
+    let data;
+    try { data = JSON.parse(raw); } catch { return; }
+    const { type } = data;
 
-    switch (msg.type) {
-
-      // ── register ────────────────────────────────────
-      // script.js sends this as the very first message after
-      // the socket opens, passing the userId from /api/join.
-      case 'register': {
-        const user = users.get(msg.userId);
-        if (!user) {
-          sendTo(ws, { type: 'error', text: 'Unknown user — please refresh the page.' });
-          return;
-        }
-
-        clients.set(ws, msg.userId);
-        ws.userId = msg.userId;
-
-        // Welcome message visible only to the joining user
-        sendTo(ws, {
-          type: 'system',
-          text: `Welcome, ${user.username}! 👋  Say hello to everyone.`,
-        });
-
-        // Announce join to everyone else
-        broadcastExcept({
-          type: 'system',
-          text: `${user.username} joined the room 🟢`,
-        }, ws);
-
-        // Push updated online list to ALL clients (including the new one)
-        broadcast({ type: 'active-users', users: activeUserList() });
-        break;
+    // ── register ──
+    if (type === 'register') {
+      const { userId } = data;
+      if (!users.has(userId)) return ws.send(JSON.stringify({ type: 'error', message: 'unknown user' }));
+      clients.set(ws, userId);
+      const user = users.get(userId);
+      // broadcast join
+      broadcast({ type: 'userJoined', user: publicUser(user) }, ws);
+      // send current online users to newcomer
+      const online = [];
+      clients.forEach((uid) => { if (users.has(uid)) online.push(publicUser(users.get(uid))); });
+      ws.send(JSON.stringify({ type: 'onlineUsers', users: online }));
+      // send pending requests
+      const pending = pendingReqs.get(userId);
+      if (pending && pending.size > 0) {
+        const reqs = [];
+        pending.forEach(fid => { if (users.has(fid)) reqs.push(publicUser(users.get(fid))); });
+        ws.send(JSON.stringify({ type: 'pendingRequests', requests: reqs }));
       }
+      return;
+    }
 
-      // ── message ─────────────────────────────────────
-      case 'message': {
-        const uid  = clients.get(ws);
-        const user = uid ? users.get(uid) : null;
-        if (!user) return;
+    const userId = clients.get(ws);
+    if (!userId) return;
+    const user = users.get(userId);
+    if (!user) return;
 
-        const text = String(msg.text || '').trim().slice(0, 2000);
-        if (!text) return;
+    // ── message (public) ──
+    if (type === 'message') {
+      const { text, replyTo, clientMsgId } = data;
+      if (!text || typeof text !== 'string' || text.trim().length === 0) return;
+      const msg = {
+        id: crypto.randomBytes(8).toString('hex'),
+        clientMsgId: clientMsgId || null,
+        userId, username: user.username,
+        avatar: user.avatar, avatarBg: user.avatarBg,
+        text: text.trim().slice(0, 2000),
+        replyTo: replyTo || null,
+        reactions: {},
+        channel: 'public',
+        ts: Date.now()
+      };
+      globalMsgs.push(msg);
+      capArray(globalMsgs, 200);
+      broadcast({ type: 'message', msg });
+      return;
+    }
 
-        // Build the full entry — includes all profile fields so that
-        // script.js can display avatar + sender name in the bubble and
-        // show the full card when a user's name is clicked.
-        const entry = {
-          id:       makeId('m'),
-          userId:   user.userId,
-          username: user.username,
-          avatar:   user.avatar   || '😎',
-          age:      user.age      || '',
-          gender:   user.gender   || '',
-          location: user.location || '',
-          about:    user.about    || '',
-          text,
-          time:     new Date().toISOString(),
-        };
+    // ── dm ──
+    if (type === 'dm') {
+      const { toUserId, text, replyTo, clientMsgId } = data;
+      if (!toUserId || !text) return;
+      const key = pairKey(userId, toUserId);
+      if (!acceptedPairs.has(key)) return;
+      const msg = {
+        id: crypto.randomBytes(8).toString('hex'),
+        clientMsgId: clientMsgId || null,
+        userId, username: user.username,
+        avatar: user.avatar, avatarBg: user.avatarBg,
+        text: text.trim().slice(0, 2000),
+        replyTo: replyTo || null,
+        reactions: {},
+        channel: key,
+        toUserId,
+        ts: Date.now()
+      };
+      if (!dmStore.has(key)) dmStore.set(key, []);
+      const arr = dmStore.get(key);
+      arr.push(msg);
+      capArray(arr, 200);
+      broadcast({ type: 'dm', msg });
+      return;
+    }
 
-        // Persist and cap
-        messages.push(entry);
-        if (messages.length > MAX_HISTORY) messages.shift();
-
-        // Fan out to everyone including the sender
-        broadcast({ type: 'message', ...entry });
-        break;
+    // ── doodle ──
+    if (type === 'doodle') {
+      const { imageData, channel, toUserId } = data;
+      if (!imageData) return;
+      const msg = {
+        id: crypto.randomBytes(8).toString('hex'),
+        userId, username: user.username,
+        avatar: user.avatar, avatarBg: user.avatarBg,
+        doodle: true, imageData,
+        reactions: {},
+        channel: channel || 'public',
+        ts: Date.now()
+      };
+      if (channel === 'public') {
+        globalMsgs.push(msg);
+        capArray(globalMsgs, 200);
+        broadcast({ type: 'message', msg });
+      } else if (toUserId) {
+        const key = pairKey(userId, toUserId);
+        if (!acceptedPairs.has(key)) return;
+        msg.channel = key;
+        msg.toUserId = toUserId;
+        if (!dmStore.has(key)) dmStore.set(key, []);
+        dmStore.get(key).push(msg);
+        capArray(dmStore.get(key), 200);
+        broadcast({ type: 'dm', msg });
       }
+      return;
+    }
 
-      // ── typing ──────────────────────────────────────
-      case 'typing': {
-        const uid  = clients.get(ws);
-        const user = uid ? users.get(uid) : null;
-        if (!user) return;
+    // ── eruption ──
+    if (type === 'eruption') {
+      const { text, emoji } = data;
+      broadcast({ type: 'eruption', text: (text || '').slice(0, 100), emoji: emoji || '🌋', userId, username: user.username });
+      return;
+    }
 
-        // Relay to everyone except the sender
-        broadcastExcept({
-          type:     'typing',
-          userId:   user.userId,
-          username: user.username,
-          isTyping: !!msg.isTyping,
-        }, ws);
-        break;
+    // ── typing ──
+    if (type === 'typing') {
+      const { channel, toUserId, isTyping } = data;
+      if (channel === 'public') {
+        broadcast({ type: 'typing', userId, username: user.username, channel: 'public', isTyping }, ws);
+      } else if (toUserId) {
+        sendTo(toUserId, { type: 'typing', userId, username: user.username, channel: pairKey(userId, toUserId), isTyping });
       }
+      return;
+    }
 
-      default:
-        break;
+    // ── chat-request ──
+    if (type === 'chat-request') {
+      const { toUserId } = data;
+      if (!toUserId || !users.has(toUserId)) return;
+      const key = pairKey(userId, toUserId);
+      if (acceptedPairs.has(key)) return;
+      if (!pendingReqs.has(toUserId)) pendingReqs.set(toUserId, new Set());
+      pendingReqs.get(toUserId).add(userId);
+      sendTo(toUserId, { type: 'chat-request', from: publicUser(user) });
+      return;
+    }
+
+    // ── chat-response ──
+    if (type === 'chat-response') {
+      const { fromUserId, accepted } = data;
+      if (!fromUserId || !users.has(fromUserId)) return;
+      const key = pairKey(userId, fromUserId);
+      const pending = pendingReqs.get(userId);
+      if (pending) pending.delete(fromUserId);
+      if (accepted) {
+        acceptedPairs.add(key);
+        const sysMsg = { id: crypto.randomBytes(8).toString('hex'), system: true, text: 'You can now chat!', channel: key, ts: Date.now() };
+        if (!dmStore.has(key)) dmStore.set(key, []);
+        dmStore.get(key).push(sysMsg);
+        sendTo(userId, { type: 'chat-accepted', peerId: fromUserId, peer: publicUser(users.get(fromUserId)), history: dmStore.get(key) });
+        sendTo(fromUserId, { type: 'chat-accepted', peerId: userId, peer: publicUser(user), history: dmStore.get(key) });
+      } else {
+        sendTo(fromUserId, { type: 'chat-declined', byUserId: userId, byUsername: user.username });
+      }
+      return;
+    }
+
+    // ── seen ──
+    if (type === 'seen') {
+      const { msgId, channel, toUserId } = data;
+      if (channel === 'public') {
+        broadcast({ type: 'seen', msgId, seenBy: publicUser(user), channel: 'public' }, ws);
+      } else if (toUserId) {
+        sendTo(toUserId, { type: 'seen', msgId, seenBy: publicUser(user), channel: pairKey(userId, toUserId) });
+      }
+      return;
+    }
+
+    // ── react ──
+    if (type === 'react') {
+      const { msgId, emoji, channel, toUserId } = data;
+      if (!msgId || !emoji) return;
+      let msg = null;
+      if (channel === 'public') {
+        msg = globalMsgs.find(m => m.id === msgId);
+      } else {
+        const key = pairKey(userId, toUserId || '');
+        const arr = dmStore.get(key);
+        if (arr) msg = arr.find(m => m.id === msgId);
+      }
+      if (msg) {
+        if (!msg.reactions) msg.reactions = {};
+        if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+        const idx = msg.reactions[emoji].indexOf(userId);
+        if (idx === -1) msg.reactions[emoji].push(userId);
+        else msg.reactions[emoji].splice(idx, 1);
+        if (msg.reactions[emoji].length === 0) delete msg.reactions[emoji];
+        broadcast({ type: 'react', msgId, reactions: msg.reactions, channel: msg.channel });
+      }
+      return;
     }
   });
 
-  // ── Disconnect ────────────────────────────────────────
   ws.on('close', () => {
-    const uid  = clients.get(ws);
-    const user = uid ? users.get(uid) : null;
+    const userId = clients.get(ws);
     clients.delete(ws);
-
-    if (user) {
-      console.log(`[ws]  ${user.username} disconnected`);
-      broadcast({ type: 'system',       text:  `${user.username} left the room 🔴` });
-      broadcast({ type: 'active-users', users: activeUserList() });
+    if (userId) {
+      // Check if user has other connections
+      let stillOnline = false;
+      clients.forEach((uid) => { if (uid === userId) stillOnline = true; });
+      if (!stillOnline) {
+        const user = users.get(userId);
+        if (user) {
+          broadcast({ type: 'userLeft', userId, username: user.username });
+          users.delete(userId);
+        }
+      }
     }
   });
-
-  ws.on('error', (err) => {
-    console.error('[ws error]', err.message);
-  });
 });
 
-// ── Start ─────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`\n⚡  Connector  →  http://localhost:${PORT}\n`);
-});
+server.listen(PORT, () => console.log(`Connector running on http://localhost:${PORT}`));

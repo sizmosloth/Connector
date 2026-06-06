@@ -1,367 +1,618 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" data-accent="violet">
+<html lang="en" data-theme="midnight">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Connector</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════
-     SCREEN 1 — JOIN
-═══════════════════════════════════════════ -->
-<div id="joinScreen" class="screen active">
-  <div class="bg-grid" aria-hidden="true"></div>
-  <div class="bg-glow g1" aria-hidden="true"></div>
-  <div class="bg-glow g2" aria-hidden="true"></div>
-  <div class="bg-glow g3" aria-hidden="true"></div>
+<!-- ═══════════════════════════════════════════════════════ BACKGROUND ORBS -->
+<div class="orb orb-1" aria-hidden="true"></div>
+<div class="orb orb-2" aria-hidden="true"></div>
+<div class="orb orb-3" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
 
-  <!-- Scrollable wrapper so form never clips on small screens -->
-  <div class="join-scroll-wrap">
-    <div class="join-card">
+<!-- ═══════════════════════════════════════════════════════ SCREEN: HOME -->
+<div id="screen-home" class="screen active">
+  <div class="home-topbar">
+    <div class="home-logo">
+      <svg width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Connector logo mark">
+        <circle cx="8" cy="18" r="5" fill="currentColor"/>
+        <circle cx="28" cy="10" r="5" fill="currentColor"/>
+        <circle cx="28" cy="26" r="5" fill="currentColor"/>
+        <line x1="13" y1="18" x2="23" y2="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="13" y1="18" x2="23" y2="26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      <span>Connector</span>
+    </div>
+    <button id="home-theme-toggle" class="icon-btn" aria-label="Toggle light/dark mode">🌙</button>
+  </div>
 
-      <!-- Logo -->
-      <div class="join-logo">
-        <div class="logo-mark">
-          <svg viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="currentColor" stroke-width="2"/>
-            <path d="M10 18 C10 13 14 10 18 10 C22 10 26 13 26 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-            <circle cx="12" cy="22" r="2.5" fill="currentColor"/>
-            <circle cx="18" cy="24" r="2.5" fill="currentColor"/>
-            <circle cx="24" cy="22" r="2.5" fill="currentColor"/>
-          </svg>
-        </div>
-        <span class="logo-name">Connector</span>
+  <div class="home-center">
+    <div class="home-logo-big" aria-label="Connector logo">
+      <div class="home-logo-icon floating">
+        <svg width="64" height="64" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="8" cy="18" r="5" fill="currentColor"/>
+          <circle cx="28" cy="10" r="5" fill="currentColor"/>
+          <circle cx="28" cy="26" r="5" fill="currentColor"/>
+          <line x1="13" y1="18" x2="23" y2="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="13" y1="18" x2="23" y2="26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
       </div>
+    </div>
+    <h1 class="home-title">Connector</h1>
+    <p class="home-tagline"><span id="typewriter-text"></span><span class="typewriter-cursor">|</span></p>
 
-      <h1 class="join-headline">Talk to anyone,<br/><em>anywhere.</em></h1>
-      <p class="join-sub">Fill in your details to join the room instantly.</p>
+    <div class="home-feature-cards">
+      <div class="feature-card fc-1">
+        <div class="feature-card-icon">💬</div>
+        <div class="feature-card-title">Real-time chat</div>
+        <div class="feature-card-desc">Instant messages, zero lag</div>
+      </div>
+      <div class="feature-card fc-2">
+        <div class="feature-card-icon">🔒</div>
+        <div class="feature-card-title">Private DMs</div>
+        <div class="feature-card-desc">Invite-only conversations</div>
+      </div>
+      <div class="feature-card fc-3">
+        <div class="feature-card-icon">✏️</div>
+        <div class="feature-card-title">Draw & Share</div>
+        <div class="feature-card-desc">Doodle boards for everyone</div>
+      </div>
+    </div>
 
-      <form class="join-form" onsubmit="return false">
+    <button id="btn-enter-room" class="cta-btn" aria-label="Enter the chat room">
+      Enter the Room <span class="cta-arrow">→</span>
+    </button>
+  </div>
 
-        <div class="form-row two-col">
-          <div class="field">
-            <label for="jUsername">Username <span class="req">*</span></label>
-            <input id="jUsername" type="text" placeholder="e.g. Rahul_07" maxlength="24" autocomplete="off" spellcheck="false" />
+  <div class="home-particles" id="particles-container" aria-hidden="true"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SCREEN: JOIN -->
+<div id="screen-join" class="screen">
+  <div class="join-wrap">
+    <div class="join-card">
+      <div class="join-header">
+        <button id="btn-back-home" class="back-btn" aria-label="Go back to homepage">← Back</button>
+        <h2 class="join-title">Set up your profile</h2>
+        <p class="join-sub">How should the room know you?</p>
+      </div>
+      <div class="join-scroll">
+        <!-- Identity -->
+        <section class="join-section">
+          <h3 class="join-section-title">Identity</h3>
+          <div class="form-row">
+            <label class="form-label" for="join-username">Username <span class="required">*</span></label>
+            <input id="join-username" type="text" class="form-input" maxlength="24" placeholder="your name here" autocomplete="off" aria-required="true">
           </div>
-          <div class="field">
-            <label for="jAge">Age</label>
-            <input id="jAge" type="number" placeholder="22" min="13" max="99" />
-          </div>
-        </div>
-
-        <div class="form-row two-col">
-          <div class="field">
-            <label for="jGender">Gender</label>
-            <select id="jGender">
-              <option value="">Prefer not to say</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Non-binary">Non-binary</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="jLocation">Location</label>
-            <input id="jLocation" type="text" placeholder="e.g. Punjab, India" maxlength="40" />
-          </div>
-        </div>
-
-        <div class="field">
-          <label for="jAbout">About Me</label>
-          <textarea id="jAbout" placeholder="Tell people a little about yourself…" rows="2" maxlength="160"></textarea>
-        </div>
-
-        <div class="field">
-          <label>Pick an Avatar</label>
-          <div class="avatar-picker" id="joinAvatarPicker">
-            <button type="button" class="av-opt selected" data-av="😎">😎</button>
-            <button type="button" class="av-opt" data-av="🧑‍💻">🧑‍💻</button>
-            <button type="button" class="av-opt" data-av="🦸">🦸</button>
-            <button type="button" class="av-opt" data-av="🧑‍🎨">🧑‍🎨</button>
-            <button type="button" class="av-opt" data-av="🧑‍🚀">🧑‍🚀</button>
-            <button type="button" class="av-opt" data-av="🐱">🐱</button>
-            <button type="button" class="av-opt" data-av="🦊">🦊</button>
-            <button type="button" class="av-opt" data-av="🐼">🐼</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <label>Appearance</label>
-          <div class="join-appearance">
-            <div class="theme-chips">
-              <button type="button" class="theme-chip active" data-theme="dark"  onclick="setTheme('dark')">🌙 Dark</button>
-              <button type="button" class="theme-chip"        data-theme="light" onclick="setTheme('light')">☀️ Light</button>
+          <div class="form-row-2col">
+            <div class="form-row">
+              <label class="form-label" for="join-age">Age</label>
+              <input id="join-age" type="number" class="form-input" min="13" max="99" placeholder="—">
             </div>
-            <div class="accent-row">
-              <button type="button" class="ac-dot ac-violet active" data-ac="violet"  onclick="setAccent('violet')"  title="Violet"></button>
-              <button type="button" class="ac-dot ac-blue"          data-ac="blue"    onclick="setAccent('blue')"    title="Blue"></button>
-              <button type="button" class="ac-dot ac-emerald"       data-ac="emerald" onclick="setAccent('emerald')" title="Emerald"></button>
-              <button type="button" class="ac-dot ac-rose"          data-ac="rose"    onclick="setAccent('rose')"    title="Rose"></button>
-              <button type="button" class="ac-dot ac-amber"         data-ac="amber"   onclick="setAccent('amber')"   title="Amber"></button>
+            <div class="form-row">
+              <label class="form-label" for="join-gender">Gender</label>
+              <select id="join-gender" class="form-input form-select">
+                <option value="">Prefer not to say</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Non-binary">Non-binary</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
           </div>
+          <div class="form-row">
+            <label class="form-label" for="join-pronouns">Pronouns</label>
+            <input id="join-pronouns" type="text" class="form-input" maxlength="30" placeholder="e.g. they/them">
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="join-location">Location</label>
+            <input id="join-location" type="text" class="form-input" maxlength="60" placeholder="city, country">
+          </div>
+        </section>
+
+        <!-- Mood -->
+        <section class="join-section">
+          <h3 class="join-section-title">Your Mood</h3>
+          <div class="mood-grid" id="mood-grid" role="radiogroup" aria-label="Select your mood">
+            <!-- populated by JS -->
+          </div>
+        </section>
+
+        <!-- About -->
+        <section class="join-section">
+          <h3 class="join-section-title">About You</h3>
+          <div class="form-row">
+            <label class="form-label" for="join-about">About Me <span class="char-count" id="about-count">0/160</span></label>
+            <textarea id="join-about" class="form-input form-textarea" maxlength="160" placeholder="A short intro…" rows="2"></textarea>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="join-bio">Bio <span class="char-count" id="bio-count">0/500</span></label>
+            <textarea id="join-bio" class="form-input form-textarea" maxlength="500" placeholder="Tell your story…" rows="3"></textarea>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="join-notes">🔒 Private Notes <span class="char-count" id="notes-count">0/500</span></label>
+            <textarea id="join-notes" class="form-input form-textarea private-notes" maxlength="500" placeholder="Only you can see this…" rows="2"></textarea>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="join-website">Website</label>
+            <input id="join-website" type="text" class="form-input" maxlength="100" placeholder="https://…">
+          </div>
+        </section>
+
+        <!-- Avatar -->
+        <section class="join-section">
+          <h3 class="join-section-title">Avatar</h3>
+          <div class="avatar-builder">
+            <div class="avatar-preview-wrap">
+              <div class="avatar-preview" id="avatar-preview" role="img" aria-label="Avatar preview">😊</div>
+            </div>
+            <div class="avatar-tabs" id="avatar-tabs" role="tablist">
+              <button class="avatar-tab active" data-cat="faces" role="tab" aria-selected="true">😀</button>
+              <button class="avatar-tab" data-cat="animals" role="tab" aria-selected="false">🐶</button>
+              <button class="avatar-tab" data-cat="fantasy" role="tab" aria-selected="false">🧙</button>
+              <button class="avatar-tab" data-cat="objects" role="tab" aria-selected="false">🎸</button>
+              <button class="avatar-tab" data-cat="symbols" role="tab" aria-selected="false">⭐</button>
+            </div>
+            <div class="emoji-grid" id="avatar-emoji-grid" role="listbox" aria-label="Choose avatar emoji">
+              <!-- populated by JS -->
+            </div>
+            <div class="avatar-bg-row">
+              <span class="form-label">Background</span>
+              <div class="color-swatches" id="avatar-bg-swatches" role="group" aria-label="Background color swatches">
+                <!-- populated by JS -->
+              </div>
+              <input type="color" id="avatar-bg-custom" value="#7c6af5" class="color-custom" aria-label="Custom background color">
+            </div>
+          </div>
+        </section>
+
+        <!-- Appearance -->
+        <section class="join-section">
+          <h3 class="join-section-title">Appearance</h3>
+          <div class="form-row">
+            <label class="form-label">Mode</label>
+            <div class="segmented-ctrl" id="join-mode-ctrl" role="group" aria-label="Light or dark mode">
+              <button class="seg-btn active" data-val="dark" aria-pressed="true">🌙 Dark</button>
+              <button class="seg-btn" data-val="light" aria-pressed="false">☀️ Light</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Theme</label>
+            <div class="theme-chips-scroll" id="join-theme-chips" role="group" aria-label="Theme selector">
+              <!-- populated by JS -->
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Font Size</label>
+            <div class="segmented-ctrl" id="join-fontsize-ctrl" role="group" aria-label="Font size">
+              <button class="seg-btn" data-val="small" aria-pressed="false">Small</button>
+              <button class="seg-btn active" data-val="medium" aria-pressed="true">Medium</button>
+              <button class="seg-btn" data-val="large" aria-pressed="false">Large</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="join-error" id="join-error" role="alert" aria-live="polite"></div>
+        <div class="join-actions">
+          <button id="btn-join-submit" class="cta-btn join-submit-btn" aria-label="Enter the room">Enter Room →</button>
         </div>
-
-        <p class="form-error" id="joinError"></p>
-
-        <button type="button" class="btn-primary btn-join" onclick="joinChat()">
-          <span>Join Room</span>
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-        </button>
-
-      </form>
+      </div>
     </div>
   </div>
 </div>
 
-
-<!-- ═══════════════════════════════════════════
-     SCREEN 2 — APP
-═══════════════════════════════════════════ -->
-<div id="appScreen" class="screen">
-  <div class="bg-glow g1" aria-hidden="true"></div>
-  <div class="bg-glow g2" aria-hidden="true"></div>
-
+<!-- ═══════════════════════════════════════════════════════ SCREEN: APP -->
+<div id="screen-app" class="screen">
   <div class="app-layout">
 
-    <!-- ══ SIDEBAR ══ -->
-    <aside class="sidebar" id="sidebar">
-
-      <div class="sidebar-logo">
-        <div class="logo-mark sm">
-          <svg viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="currentColor" stroke-width="2"/>
-            <path d="M10 18 C10 13 14 10 18 10 C22 10 26 13 26 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-            <circle cx="12" cy="22" r="2.5" fill="currentColor"/>
-            <circle cx="18" cy="24" r="2.5" fill="currentColor"/>
-            <circle cx="24" cy="22" r="2.5" fill="currentColor"/>
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar" aria-label="Sidebar navigation">
+      <div class="sidebar-top">
+        <div class="sidebar-logo" aria-label="Connector logo">
+          <svg width="22" height="22" viewBox="0 0 36 36" fill="none">
+            <circle cx="8" cy="18" r="5" fill="currentColor"/>
+            <circle cx="28" cy="10" r="5" fill="currentColor"/>
+            <circle cx="28" cy="26" r="5" fill="currentColor"/>
+            <line x1="13" y1="18" x2="23" y2="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="13" y1="18" x2="23" y2="26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
           </svg>
+          <span class="sidebar-logo-text">Connector</span>
         </div>
-        <span class="logo-name">Connector</span>
+
+        <!-- My profile card -->
+        <div class="my-profile-card" id="my-profile-card" role="button" tabindex="0" aria-label="Edit my profile">
+          <div class="my-avatar" id="my-avatar-display">😊</div>
+          <div class="my-profile-info">
+            <div class="my-username" id="my-username-display">—</div>
+            <div class="my-mood" id="my-mood-display">😊</div>
+          </div>
+          <div class="online-dot" aria-label="Online"></div>
+        </div>
+        <div class="my-user-id-row">
+          <span class="my-user-id" id="my-user-id-display">—</span>
+          <button class="icon-btn copy-id-btn" id="copy-id-btn" aria-label="Copy user ID">⧉</button>
+          <div class="copy-tooltip" id="copy-tooltip">Copied!</div>
+        </div>
       </div>
 
-      <!-- My profile -->
-      <div class="my-profile-card" id="myProfileCard" onclick="openProfileEditor()" title="Edit your profile">
-        <div class="mpc-avatar" id="sidebarAvatar">😎</div>
-        <div class="mpc-info">
-          <p class="mpc-name" id="sidebarName">—</p>
-          <p class="mpc-meta" id="sidebarMeta">Edit profile →</p>
-        </div>
-        <span class="online-badge" title="Online"></span>
+      <!-- Sidebar nav tabs -->
+      <div class="sidebar-tabs" role="tablist" aria-label="Sidebar tabs">
+        <button class="sidebar-tab active" data-tab="chats" id="tab-chats" role="tab" aria-selected="true" aria-controls="sidebar-panel-chats">
+          <span class="tab-icon">💬</span><span class="tab-label">Chats</span>
+        </button>
+        <button class="sidebar-tab" data-tab="people" id="tab-people" role="tab" aria-selected="false" aria-controls="sidebar-panel-people">
+          <span class="tab-icon">👥</span><span class="tab-label">People</span>
+          <span class="tab-badge" id="pending-badge" style="display:none">0</span>
+        </button>
+        <button class="sidebar-tab" data-tab="settings" id="tab-settings" role="tab" aria-selected="false" aria-controls="sidebar-panel-settings">
+          <span class="tab-icon">⚙️</span><span class="tab-label">Settings</span>
+        </button>
       </div>
 
-      <!-- Online users -->
-      <div class="sidebar-section">
-        <div class="section-header">
-          <span class="section-title">Online Now</span>
-          <span class="pill-count" id="onlineCount">0</span>
-        </div>
-        <div class="user-list" id="userList"></div>
-      </div>
-
-      <div class="sidebar-spacer"></div>
-
-      <!-- Settings -->
-      <div class="sidebar-settings">
-        <p class="section-title mb10">Appearance</p>
-
-        <div class="setting-row">
-          <span class="setting-label">Mode</span>
-          <div class="seg-ctrl">
-            <button class="seg-btn" id="btnDark"  onclick="setTheme('dark')">🌙</button>
-            <button class="seg-btn" id="btnLight" onclick="setTheme('light')">☀️</button>
+      <!-- Chats panel -->
+      <div class="sidebar-panel active" id="sidebar-panel-chats" role="tabpanel" aria-labelledby="tab-chats">
+        <div class="chat-list" id="chat-list">
+          <div class="chat-list-item active" data-channel="public" id="chat-list-public" role="button" tabindex="0" aria-label="Public Room">
+            <div class="chat-item-avatar public-avatar">🌐</div>
+            <div class="chat-item-info">
+              <div class="chat-item-name">Public Room</div>
+              <div class="chat-item-preview" id="public-last-preview">—</div>
+            </div>
+            <span class="chat-badge" id="badge-public" style="display:none">0</span>
           </div>
         </div>
+      </div>
 
-        <div class="setting-row">
-          <span class="setting-label">Accent</span>
-          <div class="accent-row">
-            <button class="ac-dot ac-violet"  data-ac="violet"  onclick="setAccent('violet')"  title="Violet"></button>
-            <button class="ac-dot ac-blue"    data-ac="blue"    onclick="setAccent('blue')"    title="Blue"></button>
-            <button class="ac-dot ac-emerald" data-ac="emerald" onclick="setAccent('emerald')" title="Emerald"></button>
-            <button class="ac-dot ac-rose"    data-ac="rose"    onclick="setAccent('rose')"    title="Rose"></button>
-            <button class="ac-dot ac-amber"   data-ac="amber"   onclick="setAccent('amber')"   title="Amber"></button>
-          </div>
+      <!-- People panel -->
+      <div class="sidebar-panel" id="sidebar-panel-people" role="tabpanel" aria-labelledby="tab-people">
+        <div class="people-search-wrap">
+          <input type="text" id="people-search" class="people-search" placeholder="Search people…" aria-label="Search people">
         </div>
-
-        <div class="setting-row">
-          <span class="setting-label">Sound</span>
-          <label class="toggle">
-            <input type="checkbox" id="soundToggle" onchange="savePrefs()" />
-            <span class="toggle-track"></span>
-          </label>
+        <div class="pending-requests-section" id="pending-requests-section" style="display:none">
+          <div class="section-label">Pending requests</div>
+          <div id="pending-requests-list"></div>
+        </div>
+        <div class="people-list" id="people-list" role="list">
+          <!-- populated by JS -->
         </div>
       </div>
 
-      <button class="leave-btn" onclick="leaveRoom()">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 100-2H4V5h7a1 1 0 100-2H3zm11.293 4.293a1 1 0 011.414 1.414L13.414 11H10a1 1 0 110-2h3.414l2.293-2.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-        Leave Room
-      </button>
+      <!-- Settings panel -->
+      <div class="sidebar-panel" id="sidebar-panel-settings" role="tabpanel" aria-labelledby="tab-settings">
+        <div class="settings-scroll">
+          <div class="settings-group">
+            <div class="settings-label">Theme</div>
+            <div class="theme-grid-mini" id="settings-theme-grid">
+              <!-- populated by JS -->
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-label">Mode</div>
+            <div class="segmented-ctrl" id="settings-mode-ctrl" role="group" aria-label="Light or dark mode">
+              <button class="seg-btn active" data-val="dark" aria-pressed="true">🌙</button>
+              <button class="seg-btn" data-val="light" aria-pressed="false">☀️</button>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-label">Font Size</div>
+            <div class="segmented-ctrl" id="settings-fontsize-ctrl" role="group" aria-label="Font size">
+              <button class="seg-btn" data-val="small">S</button>
+              <button class="seg-btn active" data-val="medium">M</button>
+              <button class="seg-btn" data-val="large">L</button>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-label">Bubble Style</div>
+            <div class="segmented-ctrl" id="settings-bubble-ctrl" role="group" aria-label="Bubble style">
+              <button class="seg-btn active" data-val="rounded">Rounded</button>
+              <button class="seg-btn" data-val="minimal">Minimal</button>
+              <button class="seg-btn" data-val="compact">Compact</button>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-label">Sounds</div>
+            <label class="toggle-row">
+              <span>Sound effects</span>
+              <input type="checkbox" id="settings-sound-toggle" checked>
+              <span class="toggle-switch"></span>
+            </label>
+            <label class="toggle-row">
+              <span>Desktop notifications</span>
+              <input type="checkbox" id="settings-notif-toggle">
+              <span class="toggle-switch"></span>
+            </label>
+            <div class="settings-label" style="margin-top:8px">Notification sound</div>
+            <select id="settings-notif-sound" class="form-input form-select" aria-label="Notification sound">
+              <option value="pop">Pop</option>
+              <option value="bubble">Bubble</option>
+              <option value="chime">Chime</option>
+              <option value="digital">Digital</option>
+              <option value="whoosh">Whoosh</option>
+            </select>
+          </div>
+          <div class="settings-group">
+            <button class="settings-edit-profile-btn" id="settings-edit-profile-btn" aria-label="Edit profile">✏️ Edit Profile</button>
+          </div>
+          <div class="settings-group">
+            <button class="settings-leave-btn" id="settings-leave-btn" aria-label="Leave the room">🚪 Leave Room</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="online-count" id="online-count">● 1 online</div>
+        <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Collapse sidebar">‹</button>
+      </div>
     </aside>
 
-    <!-- Sidebar overlay (mobile) -->
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
-
-    <!-- ══ CHAT MAIN ══ -->
-    <main class="chat-main">
-
-      <header class="chat-topbar">
-        <button class="hamburger" onclick="toggleSidebar()" aria-label="Toggle menu">
-          <span></span><span></span><span></span>
-        </button>
-        <div class="topbar-center">
-          <span class="topbar-room">Public Room</span>
-          <span class="topbar-online" id="topbarSub">0 online</span>
-        </div>
-        <button class="topbar-av-btn" onclick="openProfileEditor()" title="Edit profile" aria-label="Edit profile">
-          <span id="topbarAvatar">😎</span>
-        </button>
-      </header>
-
-      <div class="messages-wrap" id="messagesWrap">
-        <div class="messages" id="messages">
-          <div class="chat-welcome">
-            <div class="welcome-emoji">💬</div>
-            <p class="welcome-text">Welcome to the public room.<br/>Say hello to everyone!</p>
+    <!-- MAIN CHAT AREA -->
+    <main class="chat-main" id="chat-main" aria-label="Chat area">
+      <div class="chat-topbar">
+        <button class="icon-btn sidebar-expand-btn" id="sidebar-expand-btn" style="display:none" aria-label="Expand sidebar">›</button>
+        <div class="chat-topbar-info">
+          <div class="chat-channel-avatar" id="chat-channel-avatar">🌐</div>
+          <div class="chat-channel-details">
+            <div class="chat-channel-name" id="chat-channel-name">Public Room</div>
+            <div class="chat-channel-status" id="chat-channel-status"></div>
           </div>
         </div>
+        <div class="chat-topbar-actions">
+          <button class="icon-btn" id="btn-search-messages" aria-label="Search messages">🔍</button>
+          <button class="icon-btn" id="btn-open-doodle-chat" aria-label="Open doodle canvas">✏️</button>
+        </div>
       </div>
+
+      <!-- Chat tabs -->
+      <div class="chat-tabs-bar" id="chat-tabs-bar" role="tablist" aria-label="Open chats">
+        <button class="chat-tab active" data-channel="public" id="chat-tab-public" role="tab" aria-selected="true">
+          🌐 Public Room
+        </button>
+      </div>
+
+      <!-- Message search bar -->
+      <div class="msg-search-bar" id="msg-search-bar" style="display:none">
+        <input type="text" id="msg-search-input" class="msg-search-input" placeholder="Search messages…" aria-label="Search messages in current chat">
+        <button class="icon-btn" id="msg-search-close" aria-label="Close search">✕</button>
+      </div>
+
+      <!-- Messages -->
+      <div class="messages-area" id="messages-area" role="log" aria-live="polite" aria-label="Messages">
+        <div class="messages-inner" id="messages-inner"></div>
+      </div>
+
+      <!-- Scroll to bottom -->
+      <button class="scroll-bottom-btn bounce" id="scroll-bottom-btn" style="display:none" aria-label="Scroll to latest messages">↓</button>
 
       <!-- Typing indicator -->
-      <div class="typing-bar" id="typingBar" aria-live="polite"></div>
+      <div class="typing-indicator" id="typing-indicator" aria-live="polite" style="display:none">
+        <span class="typing-dots"><span></span><span></span><span></span></span>
+        <span id="typing-text">Someone is typing…</span>
+      </div>
+
+      <!-- Reply bar -->
+      <div class="reply-bar" id="reply-bar" style="display:none">
+        <span class="reply-label">↩ Replying to <strong id="reply-to-name"></strong>: <span id="reply-to-preview"></span></span>
+        <button class="icon-btn" id="reply-cancel-btn" aria-label="Cancel reply">✕</button>
+      </div>
 
       <!-- Input footer -->
-      <footer class="input-footer">
-        <button class="icon-btn emoji-btn" id="emojiBtn" onclick="toggleEmojiPicker()" title="Emoji" aria-label="Pick emoji">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-            <line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
-          </svg>
+      <div class="chat-input-footer">
+        <button class="icon-btn input-action-btn" id="btn-emoji-picker" aria-label="Open emoji picker">😊</button>
+        <button class="icon-btn input-action-btn" id="btn-doodle-footer" aria-label="Open doodle canvas">✏️</button>
+        <button class="icon-btn input-action-btn" id="btn-eruption" aria-label="Send an eruption" title="Send an Eruption">🌋</button>
+        <div class="input-wrap">
+          <textarea id="chat-input" class="chat-input" placeholder="Write something…" rows="1" maxlength="2000" aria-label="Type a message"></textarea>
+          <span class="char-count-input" id="input-char-count" style="display:none">0/2000</span>
+        </div>
+        <button class="send-btn" id="send-btn" aria-label="Send message" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
         </button>
-
-        <!-- Emoji picker popup -->
-        <div class="emoji-picker hidden" id="emojiPicker">
-          <div class="emoji-grid" id="emojiGrid"></div>
-        </div>
-
-        <div class="input-pill">
-          <textarea
-            id="msgInput"
-            placeholder="Write a message…"
-            rows="1"
-            maxlength="2000"
-            onkeydown="handleMsgKey(event)"
-            oninput="handleTypingInput()"
-            aria-label="Message"
-          ></textarea>
-          <button class="send-btn" id="sendBtn" onclick="sendMessage()" aria-label="Send" disabled>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-          </button>
-        </div>
-      </footer>
-
+      </div>
     </main>
+
+    <!-- RIGHT PANEL TOGGLE -->
+    <button class="right-panel-toggle" id="right-panel-toggle" aria-label="Open style panel" aria-expanded="false">›</button>
+
+    <!-- RIGHT PANEL -->
+    <aside class="right-panel" id="right-panel" aria-label="Style and themes panel" aria-hidden="true">
+      <div class="rp-header">Style &amp; Themes</div>
+      <div class="rp-scroll">
+        <div class="rp-section">
+          <div class="rp-label">Active Theme</div>
+          <div class="rp-active-theme" id="rp-active-theme"></div>
+        </div>
+        <div class="rp-section">
+          <div class="rp-label">Themes</div>
+          <div class="rp-theme-grid" id="rp-theme-grid"></div>
+        </div>
+        <div class="rp-section">
+          <div class="rp-label">Bubble Style</div>
+          <div class="rp-bubble-row" id="rp-bubble-row">
+            <button class="rp-bubble-opt active" data-val="rounded" aria-pressed="true">Rounded</button>
+            <button class="rp-bubble-opt" data-val="minimal" aria-pressed="false">Minimal</button>
+            <button class="rp-bubble-opt" data-val="compact" aria-pressed="false">Compact</button>
+          </div>
+        </div>
+        <div class="rp-section">
+          <div class="rp-label">Glow Intensity</div>
+          <input type="range" id="rp-glow-slider" min="0" max="100" value="60" class="rp-slider" aria-label="Background glow intensity">
+        </div>
+        <div class="rp-section rp-room-info">
+          <div class="rp-label">About this room</div>
+          <div class="rp-room-stat"><span>Online</span><strong id="rp-online-count">1</strong></div>
+          <div class="rp-room-stat"><span>Started</span><strong id="rp-room-started">—</strong></div>
+        </div>
+      </div>
+    </aside>
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════ MODALS -->
 
-<!-- ═══════════════════════════════════════════
-     PROFILE EDITOR MODAL
-═══════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="profileModal" onclick="closeProfileEditor(event)">
-  <div class="modal-card profile-editor" onclick="event.stopPropagation()">
+<!-- Profile modal (own + others) -->
+<div class="modal-overlay" id="modal-profile" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-profile-username">
+  <div class="modal profile-modal slide-in-right">
+    <button class="modal-close" id="modal-profile-close" aria-label="Close profile">✕</button>
+    <div class="profile-modal-content" id="profile-modal-content">
+      <!-- populated by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- Doodle modal -->
+<div class="modal-overlay" id="modal-doodle" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-doodle-title">
+  <div class="modal doodle-modal">
     <div class="modal-header">
-      <h2 class="modal-title">Edit Profile</h2>
-      <button class="modal-close" onclick="closeProfileEditor(null)" aria-label="Close">✕</button>
+      <h3 id="modal-doodle-title" class="modal-title">🎨 Doodle</h3>
+      <button class="modal-close" id="modal-doodle-close" aria-label="Close doodle">✕</button>
     </div>
-
-    <div class="pe-avatar-section">
-      <div class="pe-big-avatar" id="peAvatar">😎</div>
-      <div class="avatar-picker" id="peAvatarPicker">
-        <button type="button" class="av-opt" data-av="😎">😎</button>
-        <button type="button" class="av-opt" data-av="🧑‍💻">🧑‍💻</button>
-        <button type="button" class="av-opt" data-av="🦸">🦸</button>
-        <button type="button" class="av-opt" data-av="🧑‍🎨">🧑‍🎨</button>
-        <button type="button" class="av-opt" data-av="🧑‍🚀">🧑‍🚀</button>
-        <button type="button" class="av-opt" data-av="🐱">🐱</button>
-        <button type="button" class="av-opt" data-av="🦊">🦊</button>
-        <button type="button" class="av-opt" data-av="🐼">🐼</button>
+    <div class="doodle-toolbar">
+      <div class="doodle-tools" role="group" aria-label="Drawing tools">
+        <button class="doodle-tool active" data-tool="pen" aria-pressed="true" aria-label="Pen">✏️</button>
+        <button class="doodle-tool" data-tool="marker" aria-pressed="false" aria-label="Marker">🖊</button>
+        <button class="doodle-tool" data-tool="highlighter" aria-pressed="false" aria-label="Highlighter">🖍</button>
+        <button class="doodle-tool" data-tool="eraser" aria-pressed="false" aria-label="Eraser">🧹</button>
+      </div>
+      <div class="doodle-colors" id="doodle-colors" role="group" aria-label="Drawing colors">
+        <!-- populated by JS -->
+      </div>
+      <input type="color" id="doodle-custom-color" value="#7c6af5" class="color-custom" aria-label="Custom drawing color">
+      <div class="doodle-sizes" role="group" aria-label="Brush size">
+        <button class="doodle-size active" data-size="2" aria-pressed="true" aria-label="Small brush"><span style="width:4px;height:4px;border-radius:50%;background:currentColor;display:inline-block"></span></button>
+        <button class="doodle-size" data-size="5" aria-pressed="false" aria-label="Medium brush"><span style="width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block"></span></button>
+        <button class="doodle-size" data-size="10" aria-pressed="false" aria-label="Large brush"><span style="width:13px;height:13px;border-radius:50%;background:currentColor;display:inline-block"></span></button>
+        <button class="doodle-size" data-size="20" aria-pressed="false" aria-label="Extra large brush"><span style="width:20px;height:20px;border-radius:50%;background:currentColor;display:inline-block"></span></button>
       </div>
     </div>
-
-    <div class="form-row two-col">
-      <div class="field">
-        <label for="peUsername">Username</label>
-        <input id="peUsername" type="text" maxlength="24" />
-      </div>
-      <div class="field">
-        <label for="peAge">Age</label>
-        <input id="peAge" type="number" min="13" max="99" />
-      </div>
+    <canvas id="doodle-canvas" width="800" height="480" aria-label="Drawing canvas"></canvas>
+    <div class="doodle-footer">
+      <button class="icon-btn" id="doodle-undo-btn" aria-label="Undo">↩ Undo</button>
+      <button class="icon-btn" id="doodle-clear-btn" aria-label="Clear canvas">🗑 Clear</button>
+      <button class="icon-btn" id="doodle-bg-toggle" aria-label="Toggle background">☀/🌙 BG</button>
+      <div style="flex:1"></div>
+      <button class="cta-btn doodle-send-btn" id="doodle-send-btn" aria-label="Send doodle">Send Doodle</button>
     </div>
-    <div class="form-row two-col">
-      <div class="field">
-        <label for="peGender">Gender</label>
-        <select id="peGender">
-          <option value="">Prefer not to say</option>
-          <option value="Male">Male</option>
-          <option value="Female">Female</option>
-          <option value="Non-binary">Non-binary</option>
-          <option value="Other">Other</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="peLocation">Location</label>
-        <input id="peLocation" type="text" maxlength="40" />
-      </div>
-    </div>
-    <div class="field">
-      <label for="peAbout">About Me</label>
-      <textarea id="peAbout" rows="3" maxlength="160"></textarea>
-    </div>
-
-    <div class="field">
-      <p class="field-label-sm">Your ID</p>
-      <div class="id-display-row">
-        <code id="peUserId" class="id-code">—</code>
-        <button class="copy-id-btn" onclick="copyUserId()" title="Copy ID">Copy</button>
-      </div>
-    </div>
-
-    <button class="btn-primary" onclick="saveProfileEdit()">Save Changes</button>
   </div>
 </div>
 
-
-<!-- ═══════════════════════════════════════════
-     USER PROFILE CARD POPUP
-═══════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="userCardModal" onclick="closeUserCard(event)">
-  <div class="modal-card user-card" onclick="event.stopPropagation()">
-    <button class="modal-close" onclick="closeUserCard(null)" aria-label="Close">✕</button>
-    <div class="uc-avatar" id="ucAvatar">😎</div>
-    <h3 class="uc-name"  id="ucName">—</h3>
-    <p  class="uc-id"    id="ucId">—</p>
-    <div class="uc-tags"  id="ucTags"></div>
-    <p  class="uc-about" id="ucAbout"></p>
+<!-- Emoji picker modal -->
+<div class="modal-overlay emoji-picker-overlay" id="modal-emoji" style="display:none" role="dialog" aria-modal="true" aria-label="Emoji picker">
+  <div class="modal emoji-picker-modal">
+    <input type="text" id="emoji-search" class="emoji-search" placeholder="Search emoji…" aria-label="Search emoji">
+    <div class="emoji-cats" id="emoji-cats" role="tablist" aria-label="Emoji categories">
+      <button class="emoji-cat active" data-cat="recent" role="tab" aria-selected="true" aria-label="Recently used">🕒</button>
+      <button class="emoji-cat" data-cat="smileys" role="tab" aria-selected="false" aria-label="Smileys">😀</button>
+      <button class="emoji-cat" data-cat="people" role="tab" aria-selected="false" aria-label="People">👋</button>
+      <button class="emoji-cat" data-cat="animals" role="tab" aria-selected="false" aria-label="Animals">🐶</button>
+      <button class="emoji-cat" data-cat="food" role="tab" aria-selected="false" aria-label="Food">🍕</button>
+      <button class="emoji-cat" data-cat="travel" role="tab" aria-selected="false" aria-label="Travel">✈️</button>
+      <button class="emoji-cat" data-cat="objects" role="tab" aria-selected="false" aria-label="Objects">💡</button>
+      <button class="emoji-cat" data-cat="symbols" role="tab" aria-selected="false" aria-label="Symbols">#️⃣</button>
+      <button class="emoji-cat" data-cat="flags" role="tab" aria-selected="false" aria-label="Flags">🏁</button>
+    </div>
+    <div class="emoji-grid-picker" id="emoji-grid-picker" role="listbox" aria-label="Emoji list">
+      <!-- populated by JS -->
+    </div>
   </div>
 </div>
 
+<!-- Eruption modal -->
+<div class="modal-overlay" id="modal-eruption" style="display:none" role="dialog" aria-modal="true" aria-label="Send an eruption">
+  <div class="modal eruption-modal">
+    <div class="modal-header">
+      <h3 class="modal-title">🌋 Send Eruption</h3>
+      <button class="modal-close" id="modal-eruption-close" aria-label="Close">✕</button>
+    </div>
+<div class="eruption-form">
+      <label class="form-label" for="eruption-text">Message</label>
+      <input type="text" id="eruption-text" class="form-input" maxlength="80" placeholder="Your eruption text…" aria-label="Eruption message">
+      <label class="form-label">Emoji</label>
+      <div class="eruption-emoji-row">
+        <div class="eruption-emoji-preview" id="eruption-emoji-preview">🌋</div>
+        <button class="eruption-emoji-open-btn" id="eruption-emoji-open-btn" aria-label="Pick eruption emoji">Pick emoji ↓</button>
+        <input type="hidden" id="eruption-emoji-pick" value="🌋">
+      </div>
+      <div class="eruption-emoji-grid" id="eruption-emoji-grid"></div>
+    </div>
+    <div class="eruption-modal-actions">
+      <button class="icon-btn" id="eruption-preview-btn" aria-label="Preview eruption">▶ Preview</button>
+      <button class="cta-btn" id="eruption-send-btn" aria-label="Send eruption">🌋 Send</button>
+    </div>
+  </div>
+</div>
 
-<!-- Toast notification -->
-<div class="toast hidden" id="toast"></div>
+<!-- Lightbox for doodle images -->
+<div class="modal-overlay" id="modal-lightbox" style="display:none" role="dialog" aria-modal="true" aria-label="Image lightbox">
+  <div class="lightbox-inner">
+    <img id="lightbox-img" src="" alt="Doodle image full size" class="lightbox-img">
+    <button class="modal-close lightbox-close" id="modal-lightbox-close" aria-label="Close lightbox">✕</button>
+  </div>
+</div>
 
-<!-- Connection banner -->
-<div class="conn-banner hidden" id="connBanner">⚡ Reconnecting…</div>
+<!-- Keyboard shortcuts modal -->
+<div class="modal-overlay" id="modal-shortcuts" style="display:none" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+  <div class="modal shortcuts-modal">
+    <div class="modal-header">
+      <h3 id="shortcuts-title" class="modal-title">⌨️ Keyboard Shortcuts</h3>
+      <button class="modal-close" id="modal-shortcuts-close" aria-label="Close shortcuts">✕</button>
+    </div>
+    <div class="shortcuts-grid">
+      <div class="shortcut-row"><kbd>Enter</kbd><span>Send message</span></div>
+      <div class="shortcut-row"><kbd>Shift+Enter</kbd><span>New line</span></div>
+      <div class="shortcut-row"><kbd>Escape</kbd><span>Close modal</span></div>
+      <div class="shortcut-row"><kbd>/</kbd><span>Focus input</span></div>
+      <div class="shortcut-row"><kbd>Ctrl+K</kbd><span>Open emoji picker</span></div>
+      <div class="shortcut-row"><kbd>?</kbd><span>Show shortcuts</span></div>
+      <div class="shortcut-row"><kbd>↑</kbd><span>Recall last message</span></div>
+    </div>
+  </div>
+</div>
 
+<!-- Context menu -->
+<div class="ctx-menu" id="ctx-menu" style="display:none" role="menu" aria-label="Message options">
+  <button class="ctx-item" id="ctx-reply" role="menuitem" aria-label="Reply to message">↩ Reply</button>
+  <button class="ctx-item" id="ctx-react" role="menuitem" aria-label="React to message">😊 React</button>
+  <button class="ctx-item" id="ctx-copy" role="menuitem" aria-label="Copy message text">⧉ Copy</button>
+  <button class="ctx-item" id="ctx-eruption" role="menuitem" aria-label="Send as eruption">🌋 Eruption</button>
+  <button class="ctx-item ctx-delete" id="ctx-delete" role="menuitem" aria-label="Delete message" style="display:none">🗑 Delete</button>
+</div>
+
+<!-- Quick react bar -->
+<div class="quick-react-bar" id="quick-react-bar" style="display:none" role="toolbar" aria-label="Quick reactions">
+  <button class="qr-btn" data-emoji="👍" aria-label="React thumbs up">👍</button>
+  <button class="qr-btn" data-emoji="❤️" aria-label="React heart">❤️</button>
+  <button class="qr-btn" data-emoji="😂" aria-label="React laughing">😂</button>
+  <button class="qr-btn" data-emoji="😮" aria-label="React surprised">😮</button>
+  <button class="qr-btn" data-emoji="😢" aria-label="React sad">😢</button>
+  <button class="qr-btn" data-emoji="🔥" aria-label="React fire">🔥</button>
+  <button class="qr-btn" data-emoji="💯" aria-label="React 100">💯</button>
+  <button class="qr-btn" data-emoji="👏" aria-label="React clap">👏</button>
+  <button class="qr-btn" data-emoji="➕" aria-label="More reactions">➕</button>
+</div>
+
+<!-- Eruption overlay -->
+<div class="eruption-overlay" id="eruption-overlay" aria-hidden="true"></div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+<!-- Mention dropdown -->
+<div class="mention-dropdown" id="mention-dropdown" style="display:none" role="listbox" aria-label="Mention user suggestions">
+  <!-- populated by JS -->
+</div>
+<!-- Ambient lines: GPU-only CSS divs, no SVG, no blur filters -->
+<div class="ambient-line al-1" aria-hidden="true"></div>
+<div class="ambient-line al-2" aria-hidden="true"></div>
+<div class="ambient-line al-3" aria-hidden="true"></div>
+<div class="ambient-line al-4" aria-hidden="true"></div>
+<div class="ambient-line al-5" aria-hidden="true"></div>
 <script src="script.js"></script>
 </body>
 </html>
