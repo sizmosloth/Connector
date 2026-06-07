@@ -1786,30 +1786,376 @@ function openEruptionModal() {
 function playEruption(text, emoji) {
   const overlay = $('eruption-overlay');
   overlay.innerHTML = '';
-  const count = 12 + Math.floor(Math.random()*8);
-  for (let i=0; i<count; i++) {
-    const p = el('div','eruption-particle');
-    const content_ = `${emoji||'🌋'} ${text||''}`.trim();
-    p.textContent = content_;
-    const dur  = 1.5 + Math.random()*1.5;
-    const delay = Math.random()*0.8;
-    const dx  = (Math.random()-0.5)*200;
-    const dx2 = dx + (Math.random()-0.5)*100;
-    const dx3 = dx2 + (Math.random()-0.5)*80;
-    const rot = (Math.random()-0.5)*60;
-    const size= 16 + Math.floor(Math.random()*16);
-    const xPos= Math.random()*90;
-    p.style.left = xPos+'%';
-    p.style.fontSize = size+'px';
-    p.style.setProperty('--dur',  dur+'s');
-    p.style.setProperty('--delay', delay+'s');
-    p.style.setProperty('--dx',   dx+'px');
-    p.style.setProperty('--dx2',  dx2+'px');
-    p.style.setProperty('--dx3',  dx3+'px');
-    p.style.setProperty('--rot',  rot+'deg');
-    overlay.appendChild(p);
+
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  overlay.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+
+  const W  = canvas.width;
+  const H  = canvas.height;
+
+  // ── Config ────────────────────────────────────────────────────
+  const e      = (emoji || '🌋').trim();
+  const label  = (text  || '').trim();
+  const accent = getComputedStyle(document.documentElement)
+    .getPropertyValue('--accent').trim() || '#7c6af5';
+
+  // Convert hex accent to rgb for reuse
+  function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1,3),16);
+    const g = parseInt(hex.slice(3,5),16);
+    const b = parseInt(hex.slice(5,7),16);
+    return {r,g,b};
   }
-  setTimeout(() => { overlay.innerHTML=''; }, 3500);
+  const rgb = hexToRgb(accent.startsWith('#') ? accent : '#7c6af5');
+  const accentRgb = `${rgb.r},${rgb.g},${rgb.b}`;
+
+  // Launch from bottom-centre
+  const LAUNCH_X = W / 2;
+  const LAUNCH_Y = H;
+
+  // Burst happens at a random height between 25%–55% from top
+  const BURST_Y  = H * (0.25 + Math.random() * 0.30);
+  const BURST_X  = LAUNCH_X + (Math.random() - 0.5) * 80;
+
+  // ── Colour palette for particles (vivid, varied) ─────────────
+  const COLORS = [
+    accent,
+    '#ffffff',
+    '#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff',
+    '#ff922b', '#cc5de8', '#f06595', '#74c0fc',
+  ];
+
+  // Text/emoji variants displayed on label particles
+  const variants = label
+    ? [e, label, `${e}${label}`, e, label, e, label, e, `${e}${label}`, e]
+    : [e, e, e, e, e, e, e, e, e, e];
+
+  // ── State ─────────────────────────────────────────────────────
+  let phase    = 'rocket';   // 'rocket' → 'burst'
+  let startTs  = null;
+  let burstTs  = null;
+  let raf;
+
+  // ── Rocket (the rising shell before burst) ───────────────────
+  const rocket = {
+    x: LAUNCH_X, y: LAUNCH_Y,
+    trail: [],               // {x,y,alpha} trail points
+    done: false,
+  };
+  // Speed so rocket reaches BURST_Y in ~0.55s
+  const rocketSpeed = (LAUNCH_Y - BURST_Y) / 0.55; // px/s
+
+  // ── Particles (created at burst) ────────────────────────────
+  const particles = [];
+
+  // ── Ripple rings (created at burst) ─────────────────────────
+  const rings = [];
+
+  // ── Text labels that float up slowly after burst ─────────────
+  const textLabels = [];
+
+  function createBurst() {
+    phase   = 'burst';
+    burstTs = null; // will be set on first burst frame
+
+    // 3 expanding ripple rings
+    for (let r = 0; r < 3; r++) {
+      rings.push({
+        x: BURST_X, y: BURST_Y,
+        radius: 0,
+        maxR:   60 + r * 55,
+        alpha:  0.9 - r * 0.2,
+        delay:  r * 60,    // ms stagger
+        born:   0,
+      });
+    }
+
+    // ── Burst particles: 3 types ──────────────────────────────
+
+    // Type 1: Fast streaks — radial, all directions, 360°
+    for (let i = 0; i < 80; i++) {
+      const angle  = (i / 80) * Math.PI * 2;
+      const speed  = 180 + Math.random() * 320;
+      const color  = COLORS[Math.floor(Math.random() * COLORS.length)];
+      particles.push({
+        type:  'streak',
+        x: BURST_X, y: BURST_Y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        ay: 160,          // gravity
+        friction: 0.985,  // air resistance
+        size: 2 + Math.random() * 2.5,
+        color,
+        alpha: 1,
+        trail: [],
+        maxTrail: 6,
+        maxLife: 1200 + Math.random() * 600,
+        born: 0,
+        delay: Math.random() * 80,
+      });
+    }
+
+    // Type 2: Glitter sparks — slower, more spread, twinkle
+    for (let i = 0; i < 55; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 80 + Math.random() * 180;
+      const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      particles.push({
+        type:  'glitter',
+        x: BURST_X, y: BURST_Y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        ay: 120,
+        friction: 0.970,
+        size: 1.5 + Math.random() * 3,
+        color,
+        alpha: 1,
+        twinkle: Math.random() * Math.PI * 2, // phase offset
+        maxLife: 1600 + Math.random() * 800,
+        born: 0,
+        delay: 40 + Math.random() * 120,
+      });
+    }
+
+    // Type 3: Text/emoji labels — fewer, float upward, readable
+    const LABEL_COUNT = 14;
+    for (let i = 0; i < LABEL_COUNT; i++) {
+      const angle = (i / LABEL_COUNT) * Math.PI * 2;
+      const speed = 100 + Math.random() * 140;
+      const size  = 16 + Math.round((1 - Math.abs(Math.cos(angle))) * 10) + Math.random() * 8;
+      textLabels.push({
+        x: BURST_X + (Math.random()-0.5)*40,
+        y: BURST_Y + (Math.random()-0.5)*40,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 30,   // slight upward bias
+        ay: 55,                              // very low gravity so text floats
+        friction: 0.975,
+        size,
+        label: variants[i % variants.length],
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        alpha: 0,
+        angle: (Math.random()-0.5) * 0.4,
+        spin:  (Math.random()-0.5) * 0.8,
+        maxLife: 2200 + Math.random() * 600,
+        born: 0,
+        delay: 60 + Math.random() * 100,   // labels appear just after streaks
+      });
+    }
+  }
+
+  // ── Draw helpers ─────────────────────────────────────────────
+  function drawRocketTrail() {
+    if (rocket.trail.length < 2) return;
+    for (let i = 1; i < rocket.trail.length; i++) {
+      const t0 = rocket.trail[i-1];
+      const t1 = rocket.trail[i];
+      ctx.beginPath();
+      ctx.moveTo(t0.x, t0.y);
+      ctx.lineTo(t1.x, t1.y);
+      ctx.strokeStyle = `rgba(${accentRgb},${t1.alpha * 0.7})`;
+      ctx.lineWidth   = 3 * t1.alpha;
+      ctx.lineCap     = 'round';
+      ctx.stroke();
+    }
+    // Rocket head — bright dot
+    ctx.beginPath();
+    ctx.arc(rocket.x, rocket.y, 4, 0, Math.PI*2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    // Small bright halo around head
+    ctx.beginPath();
+    ctx.arc(rocket.x, rocket.y, 7, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(${accentRgb},0.3)`;
+    ctx.fill();
+  }
+
+  function drawRings(elapsed) {
+    for (const ring of rings) {
+      const age = elapsed - ring.delay;
+      if (age < 0) continue;
+      const prog = Math.min(age / 500, 1);         // expand over 500ms
+      ring.radius = ring.maxR * easeOut(prog);
+      ring.alpha  = (1 - prog) * (ring.alpha);
+
+      if (ring.alpha <= 0) continue;
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, ring.radius, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(${accentRgb},${ring.alpha * 0.8})`;
+      ctx.lineWidth   = 2.5 * (1 - prog * 0.7);
+      ctx.stroke();
+    }
+  }
+
+  function drawParticles(elapsed) {
+    const dt = 1/60;
+    for (const p of particles) {
+      const age  = elapsed - p.delay;
+      if (age < 0) continue;
+      const prog = age / p.maxLife;
+      if (prog >= 1) continue;
+
+      p.x  += p.vx * dt;
+      p.y  += p.vy * dt;
+      p.vy += p.ay * dt;
+      p.vx *= p.friction;
+      p.vy *= p.friction;
+
+      // Alpha: instant on, fade out last 40%
+      p.alpha = prog < 0.60 ? 1 : 1 - (prog - 0.60) / 0.40;
+      p.alpha = Math.max(0, p.alpha);
+
+      if (p.type === 'streak') {
+        // Add to trail
+        p.trail.push({x: p.x, y: p.y});
+        if (p.trail.length > p.maxTrail) p.trail.shift();
+
+        // Draw trail
+        for (let i = 1; i < p.trail.length; i++) {
+          const ta = (i / p.trail.length) * p.alpha;
+          ctx.beginPath();
+          ctx.moveTo(p.trail[i-1].x, p.trail[i-1].y);
+          ctx.lineTo(p.trail[i].x, p.trail[i].y);
+          ctx.strokeStyle = p.color;
+          ctx.globalAlpha = ta * 0.8;
+          ctx.lineWidth   = p.size * (i / p.trail.length);
+          ctx.lineCap     = 'round';
+          ctx.stroke();
+        }
+        // Dot at head
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fillStyle   = '#ffffff';
+        ctx.globalAlpha = p.alpha;
+        ctx.fill();
+
+      } else if (p.type === 'glitter') {
+        // Twinkle: sine wave on alpha
+        p.twinkle += 0.18;
+        const twinkleAlpha = p.alpha * (0.5 + 0.5 * Math.sin(p.twinkle));
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fillStyle   = p.color;
+        ctx.globalAlpha = twinkleAlpha;
+        ctx.fill();
+        // tiny bright centre
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 0.4, 0, Math.PI*2);
+        ctx.fillStyle   = '#ffffff';
+        ctx.globalAlpha = twinkleAlpha * 0.9;
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawTextLabels(elapsed) {
+    const dt = 1/60;
+    for (const p of textLabels) {
+      const age  = elapsed - p.delay;
+      if (age < 0) continue;
+      const prog = age / p.maxLife;
+      if (prog >= 1) continue;
+
+      p.x     += p.vx * dt;
+      p.y     += p.vy * dt;
+      p.vy    += p.ay * dt;
+      p.vx    *= p.friction;
+      p.vy    *= p.friction;
+      p.angle += p.spin * dt;
+
+      // Fade in first 8%, hold, fade out last 25%
+      p.alpha = prog < 0.08
+        ? prog / 0.08
+        : prog < 0.75
+          ? 1
+          : 1 - (prog - 0.75) / 0.25;
+      p.alpha = Math.max(0, p.alpha);
+
+      ctx.save();
+      ctx.globalAlpha = p.alpha;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.font         = `800 ${p.size}px 'Plus Jakarta Sans',sans-serif`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      // Coloured text — readable, no blur
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.label, 0, 0);
+      // White outline for legibility on any bg
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth   = 2;
+      ctx.strokeText(p.label, 0, 0);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ── Easing ───────────────────────────────────────────────────
+  function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+  // ── Main loop ────────────────────────────────────────────────
+  function frame(now) {
+    if (!startTs) startTs = now;
+    const elapsed = now - startTs;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (phase === 'rocket') {
+      // Move rocket upward
+      const dist  = LAUNCH_Y - BURST_Y;
+      const tSec  = elapsed / 1000;
+      rocket.y    = LAUNCH_Y - rocketSpeed * tSec;
+      rocket.x    = LAUNCH_X + Math.sin(tSec * 6) * 4; // tiny wobble
+
+      // Build trail
+      rocket.trail.push({ x: rocket.x, y: rocket.y, alpha: 1 });
+      // Fade old trail points
+      for (const pt of rocket.trail) pt.alpha *= 0.82;
+      if (rocket.trail.length > 18) rocket.trail.shift();
+
+      drawRocketTrail();
+
+      // Reached burst height?
+      if (rocket.y <= BURST_Y) {
+        createBurst();
+      }
+    } else {
+      // Burst phase
+      if (!burstTs) burstTs = now;
+      const bElapsed = now - burstTs;
+
+      drawRings(bElapsed);
+      drawParticles(bElapsed);
+      drawTextLabels(bElapsed);
+
+      // Flash — bright white circle at burst point, frame 0 only
+      if (bElapsed < 80) {
+        const flashR = 50 * (1 - bElapsed/80);
+        ctx.beginPath();
+        ctx.arc(BURST_X, BURST_Y, flashR, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(255,255,255,${0.9 * (1 - bElapsed/80)})`;
+        ctx.fill();
+      }
+
+      // Stop when all particles done (~3.2s max)
+      if (bElapsed > 3400) {
+        cancelAnimationFrame(raf);
+        canvas.remove();
+        return;
+      }
+    }
+
+    raf = requestAnimationFrame(frame);
+  }
+
+  raf = requestAnimationFrame(frame);
+
+  // Hard safety timeout
+  setTimeout(() => { cancelAnimationFrame(raf); canvas.remove(); }, 5000);
 }
 
 /* ── Doodle ─────────────────────────────────────────────────────────── */
