@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="midnight">
+<html lang="en" data-theme="lemon">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -80,18 +80,26 @@
     <div class="join-card">
       <div class="join-header">
         <button id="btn-back-home" class="back-btn" aria-label="Go back to homepage">← Back</button>
-        <h2 class="join-title">Set up your profile</h2>
-        <p class="join-sub">How should the room know you?</p>
+        <h2 class="join-title">Welcome to Connector</h2>
+        <p class="join-sub">Log in or sign up to enter your room.</p>
       </div>
       <div class="join-scroll">
+        <div class="auth-switch" role="tablist" aria-label="Authentication mode">
+          <button class="auth-switch-btn active" type="button" role="tab" aria-selected="true" data-auth-mode="login">Login</button>
+          <button class="auth-switch-btn" type="button" role="tab" aria-selected="false" data-auth-mode="signup">Sign Up</button>
+        </div>
         <!-- Identity -->
-        <section class="join-section">
-          <h3 class="join-section-title">Identity</h3>
+        <section class="join-section auth-section">
+          <h3 class="join-section-title">Account</h3>
           <div class="form-row">
             <label class="form-label" for="join-username">Username <span class="required">*</span></label>
             <input id="join-username" type="text" class="form-input" maxlength="24" placeholder="your name here" autocomplete="off" aria-required="true">
           </div>
-          <div class="form-row-2col">
+          <div class="form-row">
+            <label class="form-label" for="join-password">Password <span class="required">*</span></label>
+            <input id="join-password" type="password" class="form-input" maxlength="64" placeholder="your password" autocomplete="current-password" aria-required="true">
+          </div>
+          <div class="form-row-2col moved-profile-field">
             <div class="form-row">
               <label class="form-label" for="join-age">Age</label>
               <input id="join-age" type="number" class="form-input" min="13" max="99" placeholder="—">
@@ -107,11 +115,11 @@
               </select>
             </div>
           </div>
-          <div class="form-row">
+          <div class="form-row moved-profile-field">
             <label class="form-label" for="join-pronouns">Pronouns</label>
             <input id="join-pronouns" type="text" class="form-input" maxlength="30" placeholder="e.g. they/them">
           </div>
-          <div class="form-row">
+          <div class="form-row moved-profile-field">
             <label class="form-label" for="join-location">Location</label>
             <input id="join-location" type="text" class="form-input" maxlength="60" placeholder="city, country">
           </div>
@@ -201,7 +209,7 @@
 
         <div class="join-error" id="join-error" role="alert" aria-live="polite"></div>
         <div class="join-actions">
-          <button id="btn-join-submit" class="cta-btn join-submit-btn" aria-label="Enter the room">Enter Room →</button>
+          <button id="btn-join-submit" class="cta-btn join-submit-btn" aria-label="Enter the room">Login &amp; Enter</button>
         </div>
       </div>
     </div>
@@ -211,6 +219,22 @@
 <!-- ═══════════════════════════════════════════════════════ SCREEN: APP -->
 <div id="screen-app" class="screen">
   <div class="app-layout">
+    <div class="notification-drawer" id="notification-drawer" aria-label="Notifications panel">
+      <button class="notification-pull" id="notification-pull" type="button" aria-expanded="false" aria-controls="notification-list">
+        <span class="notification-grip"></span>
+        <span class="notification-pull-label">Notifications</span>
+        <span class="notification-count" id="notification-count" style="display:none">0</span>
+      </button>
+      <div class="notification-panel" id="notification-panel">
+        <div class="notification-panel-head">
+          <strong>Notifications</strong>
+          <button class="notification-clear" id="notification-clear" type="button">Clear</button>
+        </div>
+        <div class="notification-list" id="notification-list" role="list">
+          <div class="notification-empty">No notifications yet</div>
+        </div>
+      </div>
+    </div>
 
     <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar" aria-label="Sidebar navigation">

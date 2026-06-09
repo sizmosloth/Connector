@@ -7,7 +7,7 @@
 /* ── State ──────────────────────────────────────────────────────────── */
 const STATE = {
   userId: null, username: null, avatar: '😊', avatarBg: '#7c6af5',
-  theme: 'midnight', fontSize: 'medium', bubbleStyle: 'rounded',
+  theme: 'lemon', fontSize: 'medium', bubbleStyle: 'rounded',
   soundEnabled: true, notifEnabled: false, notifSound: 'pop',
   activeChannel: 'public',
   selectedMood: '😊', selectedAvatarEmoji: '😊', selectedAvatarBg: '#7c6af5',
@@ -61,6 +61,7 @@ const AVATAR_EMOJIS = {
 const BG_SWATCHES = ['#7c6af5','#f43f5e','#10b981','#06b6d4','#f97316','#a855f7','#ec4899','#3b82f6','#eab308','#14b8a6','#6366f1','#84cc16'];
 const DOODLE_COLORS = ['#000000','#ffffff','#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#3b82f6','#8b5cf6','#ec4899','#92400e','#6b7280','#fca5a5','#fdba74','#a3e635','#67e8f9'];
 const THEMES = [
+  { id:'lemon', name:'Lemon', accent:'#EAB308', bg:'#FFFBEA' },
   { id:'midnight', name:'Midnight', accent:'#7C6AF5', bg:'#0D0F14' },
   { id:'parchment', name:'Parchment', accent:'#D97706', bg:'#F7F4EF' },
   { id:'forest', name:'Forest', accent:'#10B981', bg:'#0A1628' },
@@ -166,6 +167,7 @@ function playNamedSound(name) {
 /* ── Toast ──────────────────────────────────────────────────────────── */
 function toast(msg, type='info') {
   const c = $('toast-container');
+  recordNotification(msg, type);
   const t = el('div', `toast ${type}`);
   const m = el('span','toast-msg'); m.textContent = msg;
   const x = el('button','toast-close'); x.textContent = '✕';
@@ -180,6 +182,70 @@ function toast(msg, type='info') {
 function dismiss(t) {
   t.classList.add('out');
   setTimeout(() => t.remove(), 350);
+}
+
+const NOTIFICATION_ITEMS = [];
+function recordNotification(msg, type='info') {
+  NOTIFICATION_ITEMS.unshift({ msg, type, ts: Date.now() });
+  if (NOTIFICATION_ITEMS.length > 20) NOTIFICATION_ITEMS.pop();
+  renderNotificationDrawer();
+}
+function renderNotificationDrawer() {
+  const list = $('notification-list');
+  const count = $('notification-count');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!NOTIFICATION_ITEMS.length) {
+    list.appendChild(el('div','notification-empty','No notifications yet'));
+    if (count) count.style.display = 'none';
+    return;
+  }
+  NOTIFICATION_ITEMS.forEach(item => {
+    const row = el('div', `notification-item ${item.type}`);
+    row.setAttribute('role','listitem');
+    const dot = el('span','notification-dot');
+    const body = el('div','notification-body');
+    const text = el('div','notification-text'); text.textContent = item.msg;
+    const time = el('div','notification-time'); time.textContent = formatTime(item.ts);
+    body.appendChild(text); body.appendChild(time);
+    row.appendChild(dot); row.appendChild(body);
+    list.appendChild(row);
+  });
+  if (count) {
+    count.textContent = String(NOTIFICATION_ITEMS.length);
+    count.style.display = 'inline-flex';
+  }
+}
+function toggleNotificationDrawer(force) {
+  const drawer = $('notification-drawer');
+  const pull = $('notification-pull');
+  if (!drawer) return;
+  const open = typeof force === 'boolean' ? force : !drawer.classList.contains('open');
+  drawer.classList.toggle('open', open);
+  if (pull) pull.setAttribute('aria-expanded', String(open));
+}
+function initNotificationDrawer() {
+  const pull = $('notification-pull');
+  const clear = $('notification-clear');
+  const drawer = $('notification-drawer');
+  if (!pull || !drawer || drawer.dataset.ready) return;
+  drawer.dataset.ready = 'true';
+  pull.addEventListener('click', () => toggleNotificationDrawer());
+  if (clear) clear.addEventListener('click', () => {
+    NOTIFICATION_ITEMS.length = 0;
+    renderNotificationDrawer();
+  });
+  let startY = null;
+  document.addEventListener('touchstart', e => {
+    if ($('screen-app') && $('screen-app').classList.contains('active') && e.touches[0].clientY < 48) startY = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (startY === null) return;
+    const endY = e.changedTouches[0].clientY;
+    if (endY - startY > 40) toggleNotificationDrawer(true);
+    startY = null;
+  }, { passive: true });
+  renderNotificationDrawer();
 }
 
 /* ── Desktop notifications ──────────────────────────────────────────── */
@@ -454,9 +520,12 @@ function updateAvatarPreview() {
 /* ── Submit join ────────────────────────────────────────────────────── */
 async function submitJoin() {
   const username = $('join-username').value.trim();
+  const passwordEl = $('join-password');
+  const password = passwordEl ? passwordEl.value.trim() : '';
   const errEl = $('join-error');
   if (!username) { errEl.textContent = 'Username is required.'; return; }
   if (username.length < 2) { errEl.textContent = 'Username must be at least 2 characters.'; return; }
+  if (!password) { errEl.textContent = 'Password is required.'; return; }
   errEl.textContent = '';
   const btn = $('btn-join-submit');
   btn.disabled = true; btn.textContent = 'Joining…';
@@ -499,7 +568,8 @@ async function submitJoin() {
     if (rpStarted) rpStarted.textContent = formatTime(STATE.roomStartedAt);
   } catch(err) {
     errEl.textContent = err.message || 'Could not join. Try again.';
-    btn.disabled = false; btn.textContent = 'Enter Room →';
+    const activeAuth = document.querySelector('.auth-switch-btn.active');
+    btn.disabled = false; btn.textContent = activeAuth && activeAuth.dataset.authMode === 'signup' ? 'Sign Up & Enter' : 'Login & Enter';
   }
 }
 
@@ -640,6 +710,7 @@ function initApp() {
   setupRightPanel();
   initDoodleCanvas();
   initEmojiPicker();
+  initNotificationDrawer();
   renderThemeUIs();
   renderPeopleList();
   const rpStarted = $('rp-room-started');
@@ -1620,6 +1691,9 @@ function openUserProfile(user) {
   if (user.bio) {
     const sec=el('div','pm-section'); const lbl=el('div','pm-section-label','Bio'); const txt=el('div','pm-text'); txt.textContent=user.bio; sec.appendChild(lbl); sec.appendChild(txt); content.appendChild(sec);
   }
+  if (user.personalInfo) {
+    const sec=el('div','pm-section'); const lbl=el('div','pm-section-label','Personal Information'); const txt=el('div','pm-text'); txt.textContent=user.personalInfo; sec.appendChild(lbl); sec.appendChild(txt); content.appendChild(sec);
+  }
   if (user.website) {
     const sec=el('div','pm-section'); const lbl=el('div','pm-section-label','Website'); const link=el('a','pm-website'); link.href=user.website; link.textContent=user.website; link.target='_blank'; link.rel='noopener'; sec.appendChild(lbl); sec.appendChild(link); content.appendChild(sec);
   }
@@ -1654,7 +1728,11 @@ function openOwnProfile() {
     ['mood','Mood',STATE.selectedMood,'text'],
     ['about','About Me',null,'textarea'],
     ['bio','Bio',null,'textarea'],
+    ['gender','Gender',null,'text'],
+    ['age','Age',null,'text'],
+    ['pronouns','Pronouns',null,'text'],
     ['location','Location',null,'text'],
+    ['personalInfo','Personal Information',null,'textarea'],
     ['website','Website',null,'text'],
     ['status','Status',null,'text'],
     ['notes','🔒 Private Notes',null,'textarea'],
@@ -2405,6 +2483,16 @@ function initHome() {
 function initJoinNav() {
   $('btn-back-home').addEventListener('click', () => showScreen('screen-home'));
   $('btn-join-submit').addEventListener('click', submitJoin);
+  $$('.auth-switch-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.auth-switch-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected','true');
+      $('btn-join-submit').textContent = btn.dataset.authMode === 'signup' ? 'Sign Up & Enter' : 'Login & Enter';
+      const password = $('join-password');
+      if (password) password.setAttribute('autocomplete', btn.dataset.authMode === 'signup' ? 'new-password' : 'current-password');
+    });
+  });
 }
 
 /* ── Load saved prefs ───────────────────────────────────────────────── */
