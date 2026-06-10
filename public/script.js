@@ -732,6 +732,8 @@ function initApp() {
   $('messages-area').addEventListener('scroll', onMessagesScroll);
 
   // Topbar buttons
+  const topbarProfileBtn = $('btn-topbar-profile');
+  if (topbarProfileBtn) topbarProfileBtn.addEventListener('click', () => openOwnProfile());
   $('btn-search-messages').addEventListener('click', toggleMsgSearch);
   $('btn-open-doodle-chat').addEventListener('click', () => openDoodle());
   $('btn-doodle-footer').addEventListener('click', () => openDoodle());
