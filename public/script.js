@@ -486,6 +486,24 @@ function initJoinUI() {
     });
   });
   renderThemeUIs();
+  // ── Auth mode switch (Login / Sign Up) ──
+  const authBtns = $$('.auth-switch-btn');
+  const movedFields = $$('.moved-profile-field');
+  function setAuthMode(mode) {
+    authBtns.forEach(b => {
+      const active = b.dataset.authMode === mode;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', String(active));
+    });
+    const isLogin = mode === 'login';
+    movedFields.forEach(f => { f.style.display = isLogin ? 'none' : ''; });
+    const submitBtn = $('btn-join-submit');
+    if (submitBtn) submitBtn.textContent = isLogin ? 'Login & Enter' : 'Sign Up & Enter';
+  }
+  authBtns.forEach(btn => {
+    btn.addEventListener('click', () => setAuthMode(btn.dataset.authMode));
+  });
+  setAuthMode('login'); // default: hide extra fields on login
 }
 
 function renderAvatarEmojiGrid() {
@@ -526,9 +544,28 @@ async function submitJoin() {
   if (!username) { errEl.textContent = 'Username is required.'; return; }
   if (username.length < 2) { errEl.textContent = 'Username must be at least 2 characters.'; return; }
   if (!password) { errEl.textContent = 'Password is required.'; return; }
+  if (password.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; return; }
   errEl.textContent = '';
+
+  // ── Local account store (keyed by lowercase username) ──
+  const activeAuthBtn = document.querySelector('.auth-switch-btn.active');
+  const isLogin = !activeAuthBtn || activeAuthBtn.dataset.authMode === 'login';
+  const accountsRaw = localStorage.getItem('cn_accounts');
+  const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
+  const key = username.toLowerCase();
+
+  if (isLogin) {
+    // Must exist and password must match
+    if (!accounts[key]) { errEl.textContent = 'No account found. Please Sign Up first.'; return; }
+    if (accounts[key].password !== password) { errEl.textContent = 'Incorrect password.'; return; }
+  } else {
+    // Sign Up — must NOT already exist
+    if (accounts[key]) { errEl.textContent = 'Username already taken. Please log in.'; return; }
+    if (password.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; return; }
+  }
+
   const btn = $('btn-join-submit');
-  btn.disabled = true; btn.textContent = 'Joining…';
+  btn.disabled = true; btn.textContent = isLogin ? 'Logging in…' : 'Creating account…';
   try {
     const payload = {
       username,
@@ -550,12 +587,18 @@ async function submitJoin() {
     const res = await fetch('/api/join', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Server error');
+
+    // Save account on successful signup
+    if (!isLogin) {
+      accounts[key] = { password, username };
+      localStorage.setItem('cn_accounts', JSON.stringify(accounts));
+    }
+
     STATE.userId = data.userId;
     STATE.username = data.username;
     STATE.avatar = STATE.selectedAvatarEmoji;
     STATE.avatarBg = STATE.selectedAvatarBg;
     localStorage.setItem('cn_userId', data.userId);
-    // Seed history
     if (data.history && data.history.length) {
       STATE.messages.public = data.history;
     }
@@ -568,8 +611,7 @@ async function submitJoin() {
     if (rpStarted) rpStarted.textContent = formatTime(STATE.roomStartedAt);
   } catch(err) {
     errEl.textContent = err.message || 'Could not join. Try again.';
-    const activeAuth = document.querySelector('.auth-switch-btn.active');
-    btn.disabled = false; btn.textContent = activeAuth && activeAuth.dataset.authMode === 'signup' ? 'Sign Up & Enter' : 'Login & Enter';
+    btn.disabled = false; btn.textContent = isLogin ? 'Login & Enter' : 'Sign Up & Enter';
   }
 }
 
@@ -1739,12 +1781,20 @@ function openOwnProfile() {
     ['status','Status',null,'text'],
     ['notes','🔒 Private Notes',null,'textarea'],
   ];
-  const user = STATE.onlineUsers.get(STATE.userId) || {};
+    const user = STATE.onlineUsers.get(STATE.userId) || {};
+  // Merge STATE values as fallback so fields are never blank
+  const merged = {
+    username: STATE.username,
+    mood: STATE.selectedMood,
+    avatar: STATE.avatar,
+    avatarBg: STATE.avatarBg,
+    ...user
+  };
   const inputs = {};
   fields.forEach(([key,label,def,type]) => {
     const row = el('div','form-row');
     const lbl = el('label','form-label',label); lbl.htmlFor='edit-'+key;
-    const val = def !== null ? def : (user[key]||'');
+    const val = def !== null ? def : (merged[key]||'');
     let inp;
     if (type==='textarea') { inp=el('textarea','form-input form-textarea'); inp.rows=2; }
     else { inp=el('input','form-input'); inp.type='text'; }
@@ -1754,7 +1804,7 @@ function openOwnProfile() {
   });
   // Avatar preview row
   const avRow = el('div','form-row');
-  const avPrev = el('div','my-avatar'); avPrev.textContent=STATE.avatar; avPrev.style.background=STATE.avatarBg; avPrev.style.fontSize='32px'; avPrev.style.width='48px'; avPrev.style.height='48px'; avPrev.style.borderRadius='50%';
+  const avPrev = el('div','my-avatar'); avPrev.textContent=merged.avatar||STATE.avatar; avPrev.style.background=merged.avatarBg||STATE.avatarBg;
   avRow.appendChild(avPrev); form.appendChild(avRow);
 
   const saveBtn = el('button','cta-btn','Save Changes'); saveBtn.style.width='100%'; saveBtn.style.justifyContent='center';
@@ -2511,6 +2561,17 @@ function loadPrefs() {
    BOOT
 ════════════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
+  // Home dark/light toggle
+  const homeThemeToggle = $('home-theme-toggle');
+  if (homeThemeToggle) {
+    homeThemeToggle.addEventListener('click', () => {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'midnight' ||
+        ['midnight','forest','ocean','graphite','aurora','cherry'].includes(STATE.theme);
+      const newTheme = isDark ? 'lemon' : 'midnight';
+      applyTheme(newTheme);
+      homeThemeToggle.textContent = isDark ? '🌙' : '☀️';
+    });
+  }
   loadPrefs();
   renderThemeUIs();
   initHome();
