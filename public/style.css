@@ -1802,6 +1802,202 @@ body {
   font-weight: 800 !important;
   color: #2F2A18 !important;
 }
+/* ══════════════════════════════════════════════════════
+   SLIDING AUTH SCREEN
+══════════════════════════════════════════════════════ */
+
+#screen-join {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Main container — holds both form boxes + overlay */
+.auth-container {
+  position: relative;
+  width: min(900px, 100vw);
+  height: min(620px, 100vh);
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.35);
+  background: #fff;
+}
+
+/* ── Both form boxes sit in the same space ── */
+.auth-form-box {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  transition: all 0.6s ease-in-out;
+  overflow-y: auto;
+  z-index: 2;
+}
+.auth-form-box::-webkit-scrollbar { width: 4px; }
+.auth-form-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* Sign-in sits on the LEFT by default */
+.sign-in-box {
+  left: 0;
+  z-index: 2;
+}
+
+/* Sign-up sits on the RIGHT but is invisible initially */
+.sign-up-box {
+  left: 50%;
+  opacity: 0;
+  z-index: 1;
+}
+
+/* Inner form content — column flex */
+.auth-form-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 340px;
+  padding: 40px 28px;
+}
+
+.auth-title {
+  font-family: 'Fraunces', serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text, #1a1a2e);
+  text-align: center;
+  margin-bottom: 2px;
+}
+.auth-sub {
+  font-size: 13px;
+  color: var(--text2, #6b7280);
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+/* ── Overlay: the sliding coloured half ── */
+.auth-overlay-container {
+  position: absolute;
+  top: 0;
+  left: 50%;          /* starts on the right half */
+  width: 50%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 100;
+  transition: transform 0.6s ease-in-out;
+  border-radius: 0;
+}
+
+.auth-overlay {
+  background: linear-gradient(135deg, var(--accent, #7c6af5) 0%, color-mix(in srgb, var(--accent, #7c6af5) 70%, #000) 100%);
+  position: relative;
+  left: -100%;        /* overlay is 200% wide; default shows right half */
+  height: 100%;
+  width: 200%;
+  transition: transform 0.6s ease-in-out;
+}
+
+/* Each panel inside the overlay takes half the overlay width = one full container half */
+.auth-overlay-panel {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+  text-align: center;
+}
+.overlay-left  { left: 0; }
+.overlay-right { right: 0; }
+
+/* Ghost (outline) button on the coloured panel */
+.auth-ghost-btn {
+  padding: 11px 36px;
+  border: 2px solid #fff;
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.auth-ghost-btn:hover {
+  background: #fff;
+  color: var(--accent, #7c6af5);
+}
+
+/* ── Active state: user clicked SIGN UP ── */
+
+/* Slide the overlay container to the LEFT */
+.auth-container.right-panel-active .auth-overlay-container {
+  transform: translateX(-100%);
+}
+/* Slide the inner overlay content to the right (reveals left overlay panel) */
+.auth-container.right-panel-active .auth-overlay {
+  transform: translateX(50%);
+}
+/* Move sign-in box off to the left and hide it */
+.auth-container.right-panel-active .sign-in-box {
+  transform: translateX(-100%);
+  opacity: 0;
+  z-index: 1;
+}
+/* Slide sign-up box into view on the right */
+.auth-container.right-panel-active .sign-up-box {
+  opacity: 1;
+  z-index: 2;
+  transform: translateX(0);
+}
+
+/* ── Mobile: stack vertically ── */
+@media (max-width: 600px) {
+  .auth-container {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .auth-form-box,
+  .auth-overlay-container {
+    width: 100%;
+    left: 0;
+    position: relative;
+    height: auto;
+  }
+  .auth-container {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .auth-overlay-container {
+    min-height: 160px;
+    order: -1;
+  }
+  .auth-overlay {
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .overlay-left  { display: none; }
+  .overlay-right { width: 100%; position: relative; }
+  .auth-container.right-panel-active .auth-overlay-container { transform: none; }
+  .auth-container.right-panel-active .auth-overlay { transform: none; }
+  .sign-up-box, .sign-in-box { position: relative; left: 0; opacity: 1; transform: none; }
+  .auth-container:not(.right-panel-active) .sign-up-box { display: none; }
+  .auth-container.right-panel-active .sign-in-box { display: none; }
+  .auth-container.right-panel-active .sign-up-box { display: flex; }
+}
 
 /* Mobile responsive for updated pull */
 @media (max-width: 768px) {

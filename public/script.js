@@ -35,6 +35,7 @@ const STATE = {
   glowIntensity: 60,
   ws: null, wsRetryDelay: 1000,
 };
+let _authMode; // 'login' | 'signup' | undefined (auto-detect from panel state)
 
 /* ── Emoji Data ─────────────────────────────────────────────────────── */
 const EMOJI_DATA = {
@@ -548,8 +549,9 @@ async function submitJoin() {
   errEl.textContent = '';
 
   // ── Local account store (keyed by lowercase username) ──
-  const activeAuthBtn = document.querySelector('.auth-switch-btn.active');
-  const isLogin = !activeAuthBtn || activeAuthBtn.dataset.authMode === 'login';
+  const isLogin = (typeof _authMode !== 'undefined' && _authMode === 'login') ||
+    !$('auth-container')?.classList.contains('right-panel-active');
+  _authMode = undefined; // reset after each use
   const accountsRaw = localStorage.getItem('cn_accounts');
   const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
   const key = username.toLowerCase();
@@ -2533,8 +2535,11 @@ function initHome() {
 
 /* ── Back to home ───────────────────────────────────────────────────── */
 function initJoinNav() {
-  $('btn-back-home').addEventListener('click', () => showScreen('screen-home'));
-  $('btn-join-submit').addEventListener('click', submitJoin);
+// Back buttons (there are now two — one per form)
+['btn-back-home-signin','btn-back-home-signup'].forEach(id => {
+  const el_ = $(id);
+  if (el_) el_.addEventListener('click', () => showScreen('screen-home'));
+});  $('btn-join-submit').addEventListener('click', submitJoin);
   $$('.auth-switch-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       $$('.auth-switch-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
@@ -2572,6 +2577,11 @@ document.addEventListener('DOMContentLoaded', () => {
       homeThemeToggle.textContent = isDark ? '🌙' : '☀️';
     });
   }
+  // Back buttons (there are now two — one per form)
+['btn-back-home-signin','btn-back-home-signup'].forEach(id => {
+  const el_ = $(id);
+  if (el_) el_.addEventListener('click', () => showScreen('screen-home'));
+});
   loadPrefs();
   renderThemeUIs();
   initHome();

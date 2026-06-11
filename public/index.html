@@ -76,142 +76,116 @@
 
 <!-- ═══════════════════════════════════════════════════════ SCREEN: JOIN -->
 <div id="screen-join" class="screen">
-  <div class="join-wrap">
-    <div class="join-card">
-      <div class="join-header">
-        <button id="btn-back-home" class="back-btn" aria-label="Go back to homepage">← Back</button>
-        <h2 class="join-title">Welcome to Connector</h2>
-        <p class="join-sub">Log in or sign up to enter your room.</p>
-      </div>
-      <div class="join-scroll">
-        <div class="auth-switch" role="tablist" aria-label="Authentication mode">
-          <button class="auth-switch-btn active" type="button" role="tab" aria-selected="true" data-auth-mode="login">Login</button>
-          <button class="auth-switch-btn" type="button" role="tab" aria-selected="false" data-auth-mode="signup">Sign Up</button>
+  <div class="auth-container" id="auth-container">
+
+    <!-- ── SIGN IN FORM (left side) ── -->
+    <div class="auth-form-box sign-in-box">
+      <div class="auth-form-inner">
+        <button id="btn-back-home-signin" class="back-btn" style="align-self:flex-start">← Back</button>
+        <h2 class="auth-title">Sign In</h2>
+        <p class="auth-sub">Welcome back to Connector</p>
+        <div class="form-row" style="width:100%">
+          <label class="form-label" for="login-username">Username <span class="required">*</span></label>
+          <input id="login-username" type="text" class="form-input" maxlength="24" placeholder="your username" autocomplete="username">
         </div>
-        <!-- Identity -->
-        <section class="join-section auth-section">
-          <h3 class="join-section-title">Account</h3>
-          <div class="form-row">
-            <label class="form-label" for="join-username">Username <span class="required">*</span></label>
-            <input id="join-username" type="text" class="form-input" maxlength="24" placeholder="your name here" autocomplete="off" aria-required="true">
-          </div>
-          <div class="form-row">
-            <label class="form-label" for="join-password">Password <span class="required">*</span></label>
-            <input id="join-password" type="password" class="form-input" maxlength="64" placeholder="your password" autocomplete="current-password" aria-required="true">
-          </div>
-          <div class="form-row-2col moved-profile-field">
-            <div class="form-row">
-              <label class="form-label" for="join-age">Age</label>
-              <input id="join-age" type="number" class="form-input" min="13" max="99" placeholder="—">
-            </div>
-            <div class="form-row">
-              <label class="form-label" for="join-gender">Gender</label>
-              <select id="join-gender" class="form-input form-select">
-                <option value="">Prefer not to say</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Non-binary">Non-binary</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-row moved-profile-field">
-            <label class="form-label" for="join-pronouns">Pronouns</label>
-            <input id="join-pronouns" type="text" class="form-input" maxlength="30" placeholder="e.g. they/them">
-          </div>
-          <div class="form-row moved-profile-field">
-            <label class="form-label" for="join-location">Location</label>
-            <input id="join-location" type="text" class="form-input" maxlength="60" placeholder="city, country">
-          </div>
-        </section>
-
-        <!-- Mood -->
-        <section class="join-section">
-          <h3 class="join-section-title">Your Mood</h3>
-          <div class="mood-grid" id="mood-grid" role="radiogroup" aria-label="Select your mood">
-            <!-- populated by JS -->
-          </div>
-        </section>
-
-        <!-- About -->
-        <section class="join-section moved-profile-field">
-          <h3 class="join-section-title">About You</h3>
-          <div class="form-row">
-            <label class="form-label" for="join-about">About Me <span class="char-count" id="about-count">0/160</span></label>
-            <textarea id="join-about" class="form-input form-textarea" maxlength="160" placeholder="A short intro…" rows="2"></textarea>
-          </div>
-          <div class="form-row">
-            <label class="form-label" for="join-bio">Bio <span class="char-count" id="bio-count">0/500</span></label>
-            <textarea id="join-bio" class="form-input form-textarea" maxlength="500" placeholder="Tell your story…" rows="3"></textarea>
-          </div>
-          <div class="form-row">
-            <label class="form-label" for="join-notes">🔒 Private Notes <span class="char-count" id="notes-count">0/500</span></label>
-            <textarea id="join-notes" class="form-input form-textarea private-notes" maxlength="500" placeholder="Only you can see this…" rows="2"></textarea>
-          </div>
-          <div class="form-row">
-            <label class="form-label" for="join-website">Website</label>
-            <input id="join-website" type="text" class="form-input" maxlength="100" placeholder="https://…">
-          </div>
-        </section>
-        <!-- Avatar -->
-        <section class="join-section">
-          <h3 class="join-section-title">Avatar</h3>
-          <div class="avatar-builder">
-            <div class="avatar-preview-wrap">
-              <div class="avatar-preview" id="avatar-preview" role="img" aria-label="Avatar preview">😊</div>
-            </div>
-            <div class="avatar-tabs" id="avatar-tabs" role="tablist">
-              <button class="avatar-tab active" data-cat="faces" role="tab" aria-selected="true">😀</button>
-              <button class="avatar-tab" data-cat="animals" role="tab" aria-selected="false">🐶</button>
-              <button class="avatar-tab" data-cat="fantasy" role="tab" aria-selected="false">🧙</button>
-              <button class="avatar-tab" data-cat="objects" role="tab" aria-selected="false">🎸</button>
-              <button class="avatar-tab" data-cat="symbols" role="tab" aria-selected="false">⭐</button>
-            </div>
-            <div class="emoji-grid" id="avatar-emoji-grid" role="listbox" aria-label="Choose avatar emoji">
-              <!-- populated by JS -->
-            </div>
-            <div class="avatar-bg-row">
-              <span class="form-label">Background</span>
-              <div class="color-swatches" id="avatar-bg-swatches" role="group" aria-label="Background color swatches">
-                <!-- populated by JS -->
-              </div>
-              <input type="color" id="avatar-bg-custom" value="#7c6af5" class="color-custom" aria-label="Custom background color">
-            </div>
-          </div>
-        </section>
-
-        <!-- Appearance -->
-        <section class="join-section">
-          <h3 class="join-section-title">Appearance</h3>
-          <div class="form-row">
-            <label class="form-label">Mode</label>
-            <div class="segmented-ctrl" id="join-mode-ctrl" role="group" aria-label="Light or dark mode">
-              <button class="seg-btn active" data-val="dark" aria-pressed="true">🌙 Dark</button>
-              <button class="seg-btn" data-val="light" aria-pressed="false">☀️ Light</button>
-            </div>
-          </div>
-          <div class="form-row">
-            <label class="form-label">Theme</label>
-            <div class="theme-chips-scroll" id="join-theme-chips" role="group" aria-label="Theme selector">
-              <!-- populated by JS -->
-            </div>
-          </div>
-          <div class="form-row">
-            <label class="form-label">Font Size</label>
-            <div class="segmented-ctrl" id="join-fontsize-ctrl" role="group" aria-label="Font size">
-              <button class="seg-btn" data-val="small" aria-pressed="false">Small</button>
-              <button class="seg-btn active" data-val="medium" aria-pressed="true">Medium</button>
-              <button class="seg-btn" data-val="large" aria-pressed="false">Large</button>
-            </div>
-          </div>
-        </section>
-
-        <div class="join-error" id="join-error" role="alert" aria-live="polite"></div>
-        <div class="join-actions">
-          <button id="btn-join-submit" class="cta-btn join-submit-btn" aria-label="Enter the room">Login &amp; Enter</button>
+        <div class="form-row" style="width:100%">
+          <label class="form-label" for="login-password">Password <span class="required">*</span></label>
+          <input id="login-password" type="password" class="form-input" maxlength="64" placeholder="your password" autocomplete="current-password">
         </div>
+        <div class="join-error" id="login-error" role="alert"></div>
+        <button id="btn-signin-submit" class="cta-btn" style="width:100%;justify-content:center">SIGN IN</button>
       </div>
     </div>
+
+    <!-- ── SIGN UP FORM (right side, hidden initially) ── -->
+    <div class="auth-form-box sign-up-box">
+      <div class="auth-form-inner">
+        <button id="btn-back-home-signup" class="back-btn" style="align-self:flex-start">← Back</button>
+        <h2 class="auth-title">Create Account</h2>
+        <p class="auth-sub">Join Connector today</p>
+        <div class="form-row" style="width:100%">
+          <label class="form-label" for="join-username">Username <span class="required">*</span></label>
+          <input id="join-username" type="text" class="form-input" maxlength="24" placeholder="choose a username" autocomplete="off">
+        </div>
+        <div class="form-row" style="width:100%">
+          <label class="form-label" for="join-password">Password <span class="required">*</span></label>
+          <input id="join-password" type="password" class="form-input" maxlength="64" placeholder="create a password" autocomplete="new-password">
+        </div>
+        <div class="form-row" style="width:100%">
+          <label class="form-label" for="join-age">Age</label>
+          <input id="join-age" type="number" class="form-input" min="13" max="99" placeholder="—">
+        </div>
+        <div class="form-row" style="width:100%">
+          <label class="form-label" for="join-gender">Gender</label>
+          <select id="join-gender" class="form-input form-select">
+            <option value="">Prefer not to say</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Non-binary">Non-binary</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-row" style="width:100%">
+          <label class="form-label" for="join-pronouns">Pronouns</label>
+          <input id="join-pronouns" type="text" class="form-input" maxlength="30" placeholder="e.g. they/them">
+        </div>
+        <div class="form-row" style="width:100%">
+          <label class="form-label" for="join-location">Location</label>
+          <input id="join-location" type="text" class="form-input" maxlength="60" placeholder="city, country">
+        </div>
+        <!-- Mood -->
+        <div style="width:100%">
+          <label class="form-label" style="margin-bottom:8px">Your Mood</label>
+          <div class="mood-grid" id="mood-grid" role="radiogroup" aria-label="Select your mood"></div>
+        </div>
+        <!-- Avatar -->
+        <div style="width:100%">
+          <label class="form-label" style="margin-bottom:8px">Avatar</label>
+          <div class="avatar-builder">
+            <div class="avatar-preview-wrap">
+              <div class="avatar-preview" id="avatar-preview" role="img">😊</div>
+            </div>
+            <div class="avatar-tabs" id="avatar-tabs" role="tablist">
+              <button class="avatar-tab active" data-cat="faces" role="tab">😀</button>
+              <button class="avatar-tab" data-cat="animals" role="tab">🐶</button>
+              <button class="avatar-tab" data-cat="fantasy" role="tab">🧙</button>
+              <button class="avatar-tab" data-cat="objects" role="tab">🎸</button>
+              <button class="avatar-tab" data-cat="symbols" role="tab">⭐</button>
+            </div>
+            <div class="emoji-grid" id="avatar-emoji-grid" role="listbox"></div>
+            <div class="avatar-bg-row">
+              <span class="form-label">Background</span>
+              <div class="color-swatches" id="avatar-bg-swatches" role="group"></div>
+              <input type="color" id="avatar-bg-custom" value="#7c6af5" class="color-custom">
+            </div>
+          </div>
+        </div>
+        <div class="join-error" id="join-error" role="alert"></div>
+        <button id="btn-join-submit" class="cta-btn" style="width:100%;justify-content:center">SIGN UP</button>
+      </div>
+    </div>
+
+    <!-- ── SLIDING OVERLAY PANEL ── -->
+    <div class="auth-overlay-container">
+      <div class="auth-overlay">
+
+        <!-- Left panel — shown when Sign Up is active -->
+        <div class="auth-overlay-panel overlay-left">
+          <h2 class="auth-title" style="color:#fff">Welcome Back!</h2>
+          <p class="auth-sub" style="color:rgba(255,255,255,0.85);margin-bottom:28px">Already have an account? Sign in to pick up where you left off.</p>
+          <button class="auth-ghost-btn" id="btn-goto-signin">SIGN IN</button>
+        </div>
+
+        <!-- Right panel — shown by default -->
+        <div class="auth-overlay-panel overlay-right">
+          <h2 class="auth-title" style="color:#fff">New Here?</h2>
+          <p class="auth-sub" style="color:rgba(255,255,255,0.85);margin-bottom:28px">Create an account and join the room. It only takes a moment.</p>
+          <button class="auth-ghost-btn" id="btn-goto-signup">SIGN UP</button>
+        </div>
+
+      </div>
+    </div>
+
   </div>
 </div>
 
