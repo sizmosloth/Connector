@@ -82,8 +82,17 @@
     <div class="auth-form-box sign-in-box">
       <div class="auth-form-inner">
         <button id="btn-back-home-signin" class="back-btn" style="align-self:flex-start">← Back</button>
-        <h2 class="auth-title">Sign In</h2>
-        <p class="auth-sub">Welcome back to Connector</p>
+        <div class="auth-brand-icon">
+          <svg width="40" height="40" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="18" r="5" fill="currentColor"/>
+            <circle cx="28" cy="10" r="5" fill="currentColor"/>
+            <circle cx="28" cy="26" r="5" fill="currentColor"/>
+            <line x1="13" y1="18" x2="23" y2="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="13" y1="18" x2="23" y2="26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h2 class="auth-title">Welcome Back</h2>
+        <p class="auth-sub">Sign in to Connector</p>
         <div class="form-row" style="width:100%">
           <label class="form-label" for="login-username">Username <span class="required">*</span></label>
           <input id="login-username" type="text" class="form-input" maxlength="24" placeholder="your username" autocomplete="username">
@@ -101,65 +110,26 @@
     <div class="auth-form-box sign-up-box">
       <div class="auth-form-inner">
         <button id="btn-back-home-signup" class="back-btn" style="align-self:flex-start">← Back</button>
+        <div class="auth-brand-icon">
+          <svg width="40" height="40" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="18" r="5" fill="currentColor"/>
+            <circle cx="28" cy="10" r="5" fill="currentColor"/>
+            <circle cx="28" cy="26" r="5" fill="currentColor"/>
+            <line x1="13" y1="18" x2="23" y2="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="13" y1="18" x2="23" y2="26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </div>
         <h2 class="auth-title">Create Account</h2>
-        <p class="auth-sub">Join Connector today</p>
+        <p class="auth-sub">Join Connector — it only takes a moment</p>
         <div class="form-row" style="width:100%">
           <label class="form-label" for="join-username">Username <span class="required">*</span></label>
           <input id="join-username" type="text" class="form-input" maxlength="24" placeholder="choose a username" autocomplete="off">
         </div>
         <div class="form-row" style="width:100%">
           <label class="form-label" for="join-password">Password <span class="required">*</span></label>
-          <input id="join-password" type="password" class="form-input" maxlength="64" placeholder="create a password" autocomplete="new-password">
+          <input id="join-password" type="password" class="form-input" maxlength="64" placeholder="at least 4 characters" autocomplete="new-password">
         </div>
-        <div class="form-row" style="width:100%">
-          <label class="form-label" for="join-age">Age</label>
-          <input id="join-age" type="number" class="form-input" min="13" max="99" placeholder="—">
-        </div>
-        <div class="form-row" style="width:100%">
-          <label class="form-label" for="join-gender">Gender</label>
-          <select id="join-gender" class="form-input form-select">
-            <option value="">Prefer not to say</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Non-binary">Non-binary</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-        <div class="form-row" style="width:100%">
-          <label class="form-label" for="join-pronouns">Pronouns</label>
-          <input id="join-pronouns" type="text" class="form-input" maxlength="30" placeholder="e.g. they/them">
-        </div>
-        <div class="form-row" style="width:100%">
-          <label class="form-label" for="join-location">Location</label>
-          <input id="join-location" type="text" class="form-input" maxlength="60" placeholder="city, country">
-        </div>
-        <!-- Mood -->
-        <div style="width:100%">
-          <label class="form-label" style="margin-bottom:8px">Your Mood</label>
-          <div class="mood-grid" id="mood-grid" role="radiogroup" aria-label="Select your mood"></div>
-        </div>
-        <!-- Avatar -->
-        <div style="width:100%">
-          <label class="form-label" style="margin-bottom:8px">Avatar</label>
-          <div class="avatar-builder">
-            <div class="avatar-preview-wrap">
-              <div class="avatar-preview" id="avatar-preview" role="img">😊</div>
-            </div>
-            <div class="avatar-tabs" id="avatar-tabs" role="tablist">
-              <button class="avatar-tab active" data-cat="faces" role="tab">😀</button>
-              <button class="avatar-tab" data-cat="animals" role="tab">🐶</button>
-              <button class="avatar-tab" data-cat="fantasy" role="tab">🧙</button>
-              <button class="avatar-tab" data-cat="objects" role="tab">🎸</button>
-              <button class="avatar-tab" data-cat="symbols" role="tab">⭐</button>
-            </div>
-            <div class="emoji-grid" id="avatar-emoji-grid" role="listbox"></div>
-            <div class="avatar-bg-row">
-              <span class="form-label">Background</span>
-              <div class="color-swatches" id="avatar-bg-swatches" role="group"></div>
-              <input type="color" id="avatar-bg-custom" value="#7c6af5" class="color-custom">
-            </div>
-          </div>
-        </div>
+        <p class="auth-hint">You can add your avatar, bio, and other details in your profile after signing up.</p>
         <div class="join-error" id="join-error" role="alert"></div>
         <button id="btn-join-submit" class="cta-btn" style="width:100%;justify-content:center">SIGN UP</button>
       </div>

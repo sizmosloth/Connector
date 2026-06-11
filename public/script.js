@@ -269,11 +269,22 @@ function updateTabTitle() {
 }
 
 /* ── Theme ──────────────────────────────────────────────────────────── */
+const DARK_THEMES = ['midnight','forest','ocean','graphite','aurora','cherry'];
+const LIGHT_THEMES = ['lemon','parchment','rose','candy','sunrise'];
+
+function isDarkTheme(themeId) { return DARK_THEMES.includes(themeId); }
+
+function syncHomeToggleIcon() {
+  const btn = $('home-theme-toggle');
+  if (btn) btn.textContent = isDarkTheme(STATE.theme) ? '☀️' : '🌙';
+}
+
 function applyTheme(themeId) {
   STATE.theme = themeId;
   document.documentElement.setAttribute('data-theme', themeId);
   localStorage.setItem('cn_theme', themeId);
   renderThemeUIs();
+  syncHomeToggleIcon();
 }
 function applyFontSize(size) {
   STATE.fontSize = size;
@@ -537,73 +548,98 @@ function updateAvatarPreview() {
 }
 
 /* ── Submit join ────────────────────────────────────────────────────── */
-async function submitJoin() {
-  const username = $('join-username').value.trim();
-  const passwordEl = $('join-password');
+async function submitJoin(mode) {
+  // Determine if login or signup from passed mode OR panel state
+  const authContainer = $('auth-container');
+  const isLogin = mode
+    ? mode === 'login'
+    : !authContainer?.classList.contains('right-panel-active');
+
+  // Pick the right input elements and error display based on active panel
+  const usernameEl = isLogin ? $('login-username') : $('join-username');
+  const passwordEl = isLogin ? $('login-password') : $('join-password');
+  const errEl      = isLogin ? $('login-error')    : $('join-error');
+  const submitBtn  = isLogin ? $('btn-signin-submit') : $('btn-join-submit');
+
+  const username = usernameEl ? usernameEl.value.trim() : '';
   const password = passwordEl ? passwordEl.value.trim() : '';
-  const errEl = $('join-error');
+
+  // Validation
+  errEl.textContent = '';
   if (!username) { errEl.textContent = 'Username is required.'; return; }
   if (username.length < 2) { errEl.textContent = 'Username must be at least 2 characters.'; return; }
   if (!password) { errEl.textContent = 'Password is required.'; return; }
   if (password.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; return; }
-  errEl.textContent = '';
 
-  // ── Local account store (keyed by lowercase username) ──
-  const isLogin = (typeof _authMode !== 'undefined' && _authMode === 'login') ||
-    !$('auth-container')?.classList.contains('right-panel-active');
-  _authMode = undefined; // reset after each use
+  // Local account store
   const accountsRaw = localStorage.getItem('cn_accounts');
   const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
   const key = username.toLowerCase();
 
   if (isLogin) {
-    // Must exist and password must match
     if (!accounts[key]) { errEl.textContent = 'No account found. Please Sign Up first.'; return; }
     if (accounts[key].password !== password) { errEl.textContent = 'Incorrect password.'; return; }
   } else {
-    // Sign Up — must NOT already exist
     if (accounts[key]) { errEl.textContent = 'Username already taken. Please log in.'; return; }
-    if (password.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; return; }
   }
 
-  const btn = $('btn-join-submit');
-  btn.disabled = true; btn.textContent = isLogin ? 'Logging in…' : 'Creating account…';
+  submitBtn.disabled = true;
+  submitBtn.textContent = isLogin ? 'Signing in…' : 'Creating account…';
+
   try {
+    // For login, pull saved profile data to re-use avatar/mood etc
+    const savedProfile = accounts[key] || {};
     const payload = {
       username,
-      age: parseInt($('join-age').value)||null,
-      gender: $('join-gender').value,
-      pronouns: $('join-pronouns').value.trim(),
-      location: $('join-location').value.trim(),
-      about: $('join-about').value.trim(),
-      bio: $('join-bio').value.trim(),
-      notes: $('join-notes').value.trim(),
-      website: $('join-website').value.trim(),
-      mood: STATE.selectedMood,
-      avatar: STATE.selectedAvatarEmoji,
-      avatarBg: STATE.selectedAvatarBg,
-      theme: STATE.theme,
-      fontSize: STATE.fontSize,
+      age:        isLogin ? (savedProfile.age || null)        : (parseInt($('join-age')?.value) || null),
+      gender:     isLogin ? (savedProfile.gender || '')       : ($('join-gender')?.value || ''),
+      pronouns:   isLogin ? (savedProfile.pronouns || '')     : ($('join-pronouns')?.value.trim() || ''),
+      location:   isLogin ? (savedProfile.location || '')     : ($('join-location')?.value.trim() || ''),
+      about:      isLogin ? (savedProfile.about || '')        : ($('join-about')?.value.trim() || ''),
+      bio:        isLogin ? (savedProfile.bio || '')          : ($('join-bio')?.value.trim() || ''),
+      notes:      isLogin ? (savedProfile.notes || '')        : ($('join-notes')?.value.trim() || ''),
+      website:    isLogin ? (savedProfile.website || '')      : ($('join-website')?.value.trim() || ''),
+      mood:       isLogin ? (savedProfile.mood || STATE.selectedMood) : STATE.selectedMood,
+      avatar:     isLogin ? (savedProfile.avatar || STATE.selectedAvatarEmoji) : STATE.selectedAvatarEmoji,
+      avatarBg:   isLogin ? (savedProfile.avatarBg || STATE.selectedAvatarBg) : STATE.selectedAvatarBg,
+      theme:      STATE.theme,
+      fontSize:   STATE.fontSize,
       bubbleStyle: STATE.bubbleStyle,
     };
-    const res = await fetch('/api/join', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+
+    const res = await fetch('/api/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Server error');
 
-    // Save account on successful signup
+    // Save full profile on signup so login can restore it
     if (!isLogin) {
-      accounts[key] = { password, username };
+      accounts[key] = {
+        password, username,
+        age: payload.age, gender: payload.gender,
+        pronouns: payload.pronouns, location: payload.location,
+        about: payload.about, bio: payload.bio,
+        notes: payload.notes, website: payload.website,
+        mood: payload.mood, avatar: payload.avatar, avatarBg: payload.avatarBg,
+      };
       localStorage.setItem('cn_accounts', JSON.stringify(accounts));
     }
 
-    STATE.userId = data.userId;
+    // Restore avatar/mood from saved profile on login
+    STATE.userId   = data.userId;
     STATE.username = data.username;
-    STATE.avatar = STATE.selectedAvatarEmoji;
-    STATE.avatarBg = STATE.selectedAvatarBg;
+    STATE.avatar   = payload.avatar;
+    STATE.avatarBg = payload.avatarBg;
+    STATE.selectedMood = payload.mood;
+    STATE.selectedAvatarEmoji = payload.avatar;
+    STATE.selectedAvatarBg    = payload.avatarBg;
+
     localStorage.setItem('cn_userId', data.userId);
-    if (data.history && data.history.length) {
-      STATE.messages.public = data.history;
-    }
+    if (data.history && data.history.length) STATE.messages.public = data.history;
+
     initApp();
     showScreen('screen-app');
     connectWS();
@@ -611,9 +647,11 @@ async function submitJoin() {
     STATE.roomStartedAt = Date.now();
     const rpStarted = $('rp-room-started');
     if (rpStarted) rpStarted.textContent = formatTime(STATE.roomStartedAt);
-  } catch(err) {
-    errEl.textContent = err.message || 'Could not join. Try again.';
-    btn.disabled = false; btn.textContent = isLogin ? 'Login & Enter' : 'Sign Up & Enter';
+
+  } catch (err) {
+    errEl.textContent = err.message || 'Could not connect. Try again.';
+    submitBtn.disabled = false;
+    submitBtn.textContent = isLogin ? 'SIGN IN' : 'SIGN UP';
   }
 }
 
@@ -942,6 +980,16 @@ function setupSettingsControls() {
     btn.addEventListener('click', () => {
       $$('#settings-mode-ctrl .seg-btn').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-pressed','false');});
       btn.classList.add('active'); btn.setAttribute('aria-pressed','true');
+      const wantDark = btn.dataset.val === 'dark';
+      // If current theme is already the right type, do nothing; otherwise pick a sensible default
+      const alreadyDark = isDarkTheme(STATE.theme);
+      if (wantDark && !alreadyDark) {
+        applyTheme('midnight');
+        if (STATE.userId) patchProfile({ theme: 'midnight' });
+      } else if (!wantDark && alreadyDark) {
+        applyTheme('parchment');
+        if (STATE.userId) patchProfile({ theme: 'parchment' });
+      }
     });
   });
   $$('#settings-fontsize-ctrl .seg-btn').forEach(btn => {
@@ -1292,7 +1340,7 @@ function buildMessageRow(msg, isMine, showSender, gapBig, searchQ) {
     bubble.appendChild(textEl);
   }
 
-  // Context menu on right-click / long-press
+  // Context menu on right-click / long-press (works for ALL messages)
   bubble.addEventListener('contextmenu', e => {
     e.preventDefault();
     STATE.ctxTarget = { msgId:msg.id, userId:msg.userId, text:msg.text||'', channel:msg.channel, toUserId:msg.toUserId };
@@ -1304,7 +1352,27 @@ function buildMessageRow(msg, isMine, showSender, gapBig, searchQ) {
   bubble.addEventListener('touchstart', e => { longPressTimer = setTimeout(()=>{ STATE.ctxTarget={msgId:msg.id,userId:msg.userId,text:msg.text||'',channel:msg.channel,toUserId:msg.toUserId}; const t=e.touches[0]; showCtxMenu(t.clientX,t.clientY); },600); });
   bubble.addEventListener('touchend', ()=>clearTimeout(longPressTimer));
 
-  content.appendChild(bubble);
+  // Inline react button — shown on hover, works on ALL messages
+  const reactBtn = el('button','msg-react-btn');
+  reactBtn.textContent = '😊';
+  reactBtn.title = 'React';
+  reactBtn.setAttribute('aria-label', 'Add reaction');
+  reactBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    STATE.ctxTarget = { msgId:msg.id, userId:msg.userId, text:msg.text||'', channel:msg.channel, toUserId:msg.toUserId };
+    showQuickReactAt(reactBtn);
+  });
+
+  // Wrap bubble + react button together
+  const bubbleWrap = el('div','bubble-wrap');
+  if (isMine) {
+    bubbleWrap.appendChild(reactBtn);
+    bubbleWrap.appendChild(bubble);
+  } else {
+    bubbleWrap.appendChild(bubble);
+    bubbleWrap.appendChild(reactBtn);
+  }
+  content.appendChild(bubbleWrap);
 
   // Reactions
   const reactRow = el('div','reactions-row');
@@ -1700,12 +1768,30 @@ function showCtxMenu(x, y) {
 function hideCtxMenu() { $('ctx-menu').style.display='none'; }
 
 function showQuickReact() {
-  const bar = $('quick-react-bar');
+  // Legacy: called from ctx-react menu item — position near the ctx menu
   const menu = $('ctx-menu');
   const menuRect = menu.getBoundingClientRect();
-  bar.style.display='flex';
-  bar.style.left = menuRect.left+'px';
-  bar.style.top  = (menuRect.top-50)+'px';
+  _showQuickReactBar(menuRect.left, menuRect.top - 54);
+}
+
+function showQuickReactAt(anchorEl) {
+  // Called from inline react button — smart-position near the button
+  const rect = anchorEl.getBoundingClientRect();
+  const barW = 320; // approximate width of quick-react-bar
+  let left = rect.left;
+  let top = rect.top - 54;
+  // Clamp horizontally so it never goes off-screen
+  left = Math.max(8, Math.min(left, window.innerWidth - barW - 8));
+  // If not enough room above, show below
+  if (top < 8) top = rect.bottom + 6;
+  _showQuickReactBar(left, top);
+}
+
+function _showQuickReactBar(left, top) {
+  const bar = $('quick-react-bar');
+  bar.style.display = 'flex';
+  bar.style.left = left + 'px';
+  bar.style.top = top + 'px';
 }
 function hideQuickReact() { $('quick-react-bar').style.display='none'; }
 
@@ -1765,38 +1851,151 @@ function isPendingOutgoing(toUserId) { return _pendingOutgoing.has(toUserId); }
 function openOwnProfile() {
   const content = $('profile-modal-content');
   content.innerHTML = '';
-  // Build edit form
-  const form = el('div','pm-edit-form');
-  const title = el('h3','modal-title','✏️ Edit Profile'); title.style.marginBottom='16px'; form.appendChild(title);
 
-  const fields = [
-    ['username','Username',STATE.username,'text'],
-    ['mood','Mood',STATE.selectedMood,'text'],
-    ['about','About Me',null,'textarea'],
-    ['bio','Bio',null,'textarea'],
-    ['gender','Gender',null,'text'],
-    ['age','Age',null,'text'],
-    ['pronouns','Pronouns',null,'text'],
-    ['location','Location',null,'text'],
-    ['personalInfo','Personal Information',null,'textarea'],
-    ['website','Website',null,'text'],
-    ['status','Status',null,'text'],
-    ['notes','🔒 Private Notes',null,'textarea'],
-  ];
-    const user = STATE.onlineUsers.get(STATE.userId) || {};
-  // Merge STATE values as fallback so fields are never blank
+  const user = STATE.onlineUsers.get(STATE.userId) || {};
   const merged = {
     username: STATE.username,
     mood: STATE.selectedMood,
-    avatar: STATE.avatar,
-    avatarBg: STATE.avatarBg,
+    avatar: STATE.avatar || '😊',
+    avatarBg: STATE.avatarBg || '#7c6af5',
     ...user
   };
+
+  // Track avatar state locally in the editor
+  let editAvatar = merged.avatar;
+  let editAvatarBg = merged.avatarBg;
+  let editAvatarCat = 'faces';
+
+  const form = el('div','pm-edit-form');
+  const title = el('h3','modal-title','✏️ Edit Profile');
+  title.style.marginBottom = '16px';
+  form.appendChild(title);
+
+  // ── Avatar Builder ──────────────────────────────────────
+  const avSection = el('div','form-row');
+  avSection.style.flexDirection = 'column';
+  const avLabel = el('label','form-label','Avatar');
+  avSection.appendChild(avLabel);
+
+  const avBuilder = el('div','profile-avatar-builder');
+
+  // Preview row
+  const avPreviewRow = el('div','profile-avatar-preview-row');
+  const avPreview = el('div','profile-avatar-preview');
+  avPreview.textContent = editAvatar;
+  avPreview.style.background = editAvatarBg;
+  const avPreviewInfo = el('div');
+  avPreviewInfo.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+  const avPreviewName = el('span'); avPreviewName.style.cssText = 'font-size:13px;font-weight:600;color:var(--text)'; avPreviewName.textContent = merged.username || 'Your avatar';
+  const avPreviewSub = el('span'); avPreviewSub.style.cssText = 'font-size:11px;color:var(--text3)'; avPreviewSub.textContent = 'Click an emoji below to change';
+  avPreviewInfo.appendChild(avPreviewName); avPreviewInfo.appendChild(avPreviewSub);
+  avPreviewRow.appendChild(avPreview); avPreviewRow.appendChild(avPreviewInfo);
+  avBuilder.appendChild(avPreviewRow);
+
+  // Category tabs
+  const avTabs = el('div','profile-avatar-tabs');
+  const avCats = [['faces','😀'],['animals','🐶'],['fantasy','🧙'],['objects','🎸'],['symbols','⭐']];
+  const emojiGrid = el('div','profile-emoji-grid');
+
+  function renderProfileEmojiGrid(cat) {
+    emojiGrid.innerHTML = '';
+    (AVATAR_EMOJIS[cat] || AVATAR_EMOJIS.faces).forEach(e => {
+      const btn = el('button','profile-emoji-btn');
+      btn.textContent = e; btn.title = e;
+      if (e === editAvatar) btn.classList.add('selected');
+      btn.addEventListener('click', () => {
+        emojiGrid.querySelectorAll('.profile-emoji-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        editAvatar = e;
+        avPreview.textContent = e;
+      });
+      emojiGrid.appendChild(btn);
+    });
+  }
+
+  avCats.forEach(([cat, icon]) => {
+    const tab = el('button','profile-avatar-tab');
+    tab.textContent = icon; tab.title = cat;
+    if (cat === editAvatarCat) tab.classList.add('active');
+    tab.addEventListener('click', () => {
+      avTabs.querySelectorAll('.profile-avatar-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      editAvatarCat = cat;
+      renderProfileEmojiGrid(cat);
+    });
+    avTabs.appendChild(tab);
+  });
+  avBuilder.appendChild(avTabs);
+  renderProfileEmojiGrid(editAvatarCat);
+  avBuilder.appendChild(emojiGrid);
+
+  // Background swatches
+  const BG_COLORS = ['#7c6af5','#e879f9','#f43f5e','#f97316','#eab308','#22c55e','#14b8a6','#3b82f6','#1e1e2e','#374151'];
+  const bgRow = el('div','profile-bg-swatches-row');
+  const bgLabel = el('span','form-label','BG:'); bgLabel.style.marginRight='4px';
+  bgRow.appendChild(bgLabel);
+  BG_COLORS.forEach(color => {
+    const sw = el('div','profile-bg-swatch');
+    sw.style.background = color; sw.title = color;
+    if (color === editAvatarBg) sw.classList.add('selected');
+    sw.addEventListener('click', () => {
+      bgRow.querySelectorAll('.profile-bg-swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      editAvatarBg = color;
+      avPreview.style.background = color;
+    });
+    bgRow.appendChild(sw);
+  });
+  // Custom color
+  const customBg = el('input','color-custom'); customBg.type='color'; customBg.value=editAvatarBg;
+  customBg.title = 'Custom color';
+  customBg.addEventListener('input', () => {
+    editAvatarBg = customBg.value;
+    avPreview.style.background = customBg.value;
+    bgRow.querySelectorAll('.profile-bg-swatch').forEach(s => s.classList.remove('selected'));
+  });
+  bgRow.appendChild(customBg);
+  avBuilder.appendChild(bgRow);
+  avSection.appendChild(avBuilder);
+  form.appendChild(avSection);
+
+  // ── Mood picker ─────────────────────────────────────────
+  const moodSection = el('div','form-row');
+  moodSection.style.flexDirection = 'column';
+  const moodLabel = el('label','form-label','Mood');
+  const moodRow = el('div'); moodRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:var(--bg2);border-radius:var(--radius-md)';
+  let editMood = merged.mood || '😊';
+  MOOD_EMOJIS.forEach(e => {
+    const btn = el('button',''); btn.style.cssText='width:32px;height:32px;font-size:20px;border-radius:var(--radius-sm);border:2px solid transparent;background:none;cursor:pointer;transition:all 0.15s;padding:0;display:flex;align-items:center;justify-content:center';
+    btn.textContent = e;
+    if (e === editMood) btn.style.borderColor = 'var(--accent)';
+    btn.addEventListener('click', () => {
+      moodRow.querySelectorAll('button').forEach(b => b.style.borderColor='transparent');
+      btn.style.borderColor = 'var(--accent)';
+      editMood = e;
+    });
+    moodRow.appendChild(btn);
+  });
+  moodSection.appendChild(moodLabel); moodSection.appendChild(moodRow);
+  form.appendChild(moodSection);
+
+  // ── Text fields ──────────────────────────────────────────
+  const fields = [
+    ['username','Username',merged.username||'','text'],
+    ['about','About Me',merged.about||'','textarea'],
+    ['bio','Bio',merged.bio||'','textarea'],
+    ['gender','Gender',merged.gender||'','text'],
+    ['age','Age',merged.age||'','text'],
+    ['pronouns','Pronouns',merged.pronouns||'','text'],
+    ['location','Location',merged.location||'','text'],
+    ['website','Website',merged.website||'','text'],
+    ['status','Status',merged.status||'','text'],
+    ['notes','🔒 Private Notes',merged.notes||'','textarea'],
+  ];
   const inputs = {};
-  fields.forEach(([key,label,def,type]) => {
+  fields.forEach(([key,label,val,type]) => {
     const row = el('div','form-row');
     const lbl = el('label','form-label',label); lbl.htmlFor='edit-'+key;
-    const val = def !== null ? def : (merged[key]||'');
     let inp;
     if (type==='textarea') { inp=el('textarea','form-input form-textarea'); inp.rows=2; }
     else { inp=el('input','form-input'); inp.type='text'; }
@@ -1804,19 +2003,41 @@ function openOwnProfile() {
     row.appendChild(lbl); row.appendChild(inp); form.appendChild(row);
     inputs[key]=inp;
   });
-  // Avatar preview row
-  const avRow = el('div','form-row');
-  const avPrev = el('div','my-avatar'); avPrev.textContent=merged.avatar||STATE.avatar; avPrev.style.background=merged.avatarBg||STATE.avatarBg;
-  avRow.appendChild(avPrev); form.appendChild(avRow);
 
-  const saveBtn = el('button','cta-btn','Save Changes'); saveBtn.style.width='100%'; saveBtn.style.justifyContent='center';
+  // ── Save button ──────────────────────────────────────────
+  const saveBtn = el('button','cta-btn','Save Changes');
+  saveBtn.style.cssText = 'width:100%;justify-content:center;margin-top:8px';
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled=true; saveBtn.textContent='Saving…';
     const updates = {};
-    Object.entries(inputs).forEach(([k,inp])=>{ if(inp.value.trim()) updates[k]=inp.value.trim(); });
-    STATE.selectedMood = inputs.mood ? inputs.mood.value : STATE.selectedMood;
+    Object.entries(inputs).forEach(([k,inp])=>{ updates[k] = inp.value.trim(); });
+    updates.avatar = editAvatar;
+    updates.avatarBg = editAvatarBg;
+    updates.mood = editMood;
+
+    // Update STATE immediately
+    STATE.avatar = editAvatar;
+    STATE.avatarBg = editAvatarBg;
+    STATE.selectedMood = editMood;
+    STATE.selectedAvatarEmoji = editAvatar;
+    STATE.selectedAvatarBg = editAvatarBg;
+    if (updates.username) STATE.username = updates.username;
+
+    // Update local account store too
+    try {
+      const accountsRaw = localStorage.getItem('cn_accounts');
+      if (accountsRaw && STATE.username) {
+        const accounts = JSON.parse(accountsRaw);
+        const key = (updates.username || STATE.username).toLowerCase();
+        if (accounts[key]) {
+          Object.assign(accounts[key], { avatar: editAvatar, avatarBg: editAvatarBg, mood: editMood, ...updates });
+          localStorage.setItem('cn_accounts', JSON.stringify(accounts));
+        }
+      }
+    } catch {}
+
     await patchProfile(updates);
-    if (updates.username) { STATE.username=updates.username; updateMyProfileDisplay(); }
+    updateMyProfileDisplay();
     toast('Profile updated!','success');
     closeModal('modal-profile');
   });
@@ -2522,34 +2743,46 @@ function initHome() {
   initParticles();
   $('btn-enter-room').addEventListener('click', () => {
     showScreen('screen-join');
-    setTimeout(initJoinUI, 100);
   });
   $('home-theme-toggle').addEventListener('click', () => {
-    // simple dark/light cycle
-    const lightThemes = ['parchment','rose','candy','sunrise'];
-    const isLight = lightThemes.includes(STATE.theme);
-    applyTheme(isLight ? 'midnight' : 'parchment');
-    $('home-theme-toggle').textContent = isLight ? '🌙' : '☀️';
+    // Toggle between a representative dark and light theme
+    const goLight = isDarkTheme(STATE.theme);
+    applyTheme(goLight ? 'parchment' : 'midnight');
+    // icon is synced by applyTheme → syncHomeToggleIcon()
   });
 }
 
 /* ── Back to home ───────────────────────────────────────────────────── */
 function initJoinNav() {
-// Back buttons (there are now two — one per form)
-['btn-back-home-signin','btn-back-home-signup'].forEach(id => {
-  const el_ = $(id);
-  if (el_) el_.addEventListener('click', () => showScreen('screen-home'));
-});  $('btn-join-submit').addEventListener('click', submitJoin);
-  $$('.auth-switch-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      $$('.auth-switch-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
-      btn.classList.add('active');
-      btn.setAttribute('aria-selected','true');
-      $('btn-join-submit').textContent = btn.dataset.authMode === 'signup' ? 'Sign Up & Enter' : 'Login & Enter';
-      const password = $('join-password');
-      if (password) password.setAttribute('autocomplete', btn.dataset.authMode === 'signup' ? 'new-password' : 'current-password');
-    });
+  // Back buttons — one per panel
+  ['btn-back-home-signin', 'btn-back-home-signup'].forEach(id => {
+    const btn = $(id);
+    if (btn) btn.addEventListener('click', () => showScreen('screen-home'));
   });
+
+  // Sign Up form submit
+  const joinSubmit = $('btn-join-submit');
+  if (joinSubmit) joinSubmit.addEventListener('click', () => submitJoin('signup'));
+
+  // Sign In form submit
+  const signinSubmit = $('btn-signin-submit');
+  if (signinSubmit) signinSubmit.addEventListener('click', () => submitJoin('login'));
+
+  // Sliding overlay toggle — SIGN UP button (on the right overlay panel)
+  const btnGotoSignup = $('btn-goto-signup');
+  const btnGotoSignin = $('btn-goto-signin');
+  const authContainer = $('auth-container');
+
+  if (btnGotoSignup && authContainer) {
+    btnGotoSignup.addEventListener('click', () => {
+      authContainer.classList.add('right-panel-active');
+    });
+  }
+  if (btnGotoSignin && authContainer) {
+    btnGotoSignin.addEventListener('click', () => {
+      authContainer.classList.remove('right-panel-active');
+    });
+  }
 }
 
 /* ── Load saved prefs ───────────────────────────────────────────────── */
@@ -2566,23 +2799,8 @@ function loadPrefs() {
    BOOT
 ════════════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
-  // Home dark/light toggle
-  const homeThemeToggle = $('home-theme-toggle');
-  if (homeThemeToggle) {
-    homeThemeToggle.addEventListener('click', () => {
-      const isDark = document.documentElement.getAttribute('data-theme') === 'midnight' ||
-        ['midnight','forest','ocean','graphite','aurora','cherry'].includes(STATE.theme);
-      const newTheme = isDark ? 'lemon' : 'midnight';
-      applyTheme(newTheme);
-      homeThemeToggle.textContent = isDark ? '🌙' : '☀️';
-    });
-  }
-  // Back buttons (there are now two — one per form)
-['btn-back-home-signin','btn-back-home-signup'].forEach(id => {
-  const el_ = $(id);
-  if (el_) el_.addEventListener('click', () => showScreen('screen-home'));
-});
   loadPrefs();
+  syncHomeToggleIcon();
   renderThemeUIs();
   initHome();
   initJoinNav();
