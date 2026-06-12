@@ -1,14 +1,49 @@
 # Connector
 
-a chat app we built and works surprisingly well.
+A real-time chat application built while learning how WebSockets and modern web applications work.
 
-live at → [connector-b0ku.onrender.com](https://connector-b0ku.onrender.com)
+live → [connector-b0ku.onrender.com](https://connector-b0ku.onrender.com)
+
+
+> Most of the code was written with AI assistance. AI was used to generate code, explain concepts, and help debug issues. The goal of this project was not to avoid learning, but to understand how everything works under the hood.
 
 ---
 
-built with Node.js, Express, and WebSockets. no database, no framework, no overthinking. messages live in memory so if the server restarts they're gone. that's fine.
+## Features
 
-**to run it yourself**
+* Real-time messaging
+* Public chat room
+* Private DMs
+* User profiles
+* Message reactions
+* Reply system
+* Typing indicators
+* Seen receipts
+* Emoji picker
+* Doodle canvas
+* Eruption mode
+* Message search
+* User mentions
+* Online users list
+* Desktop notifications
+* Multiple themes
+* Light/Dark mode
+* Mobile responsive
+
+---
+
+## Tech Stack
+
+* Node.js
+* Express
+* WebSockets (`ws`)
+* HTML
+* CSS
+* JavaScript
+
+---
+
+## Run Locally
 
 ```bash
 git clone https://github.com/sizmosloth/Connector.git
@@ -17,36 +52,58 @@ npm install
 node server.js
 ```
 
----
+Open:
 
-**what it does**
-
-- real-time messaging (websockets)
-- user profiles — name, age, location, avatar
-- typing indicators, online list, join/leave alerts
-- emoji picker, copy button, message history
-- dark/light mode, accent colors
-- works on mobile too somehow
-
-**what it doesn't do**
-
-- save messages permanently
-- have private rooms
-- have auth of any kind (anyone can be anyone)
-
----
-
-**stack**
-
-```
-Node.js + Express    server
-ws                   websockets
-HTML/CSS/JS          frontend, no frameworks
-Render               hosting
-UptimeRobot          keeps it from sleeping
+```text
+http://localhost:3000
 ```
 
 ---
 
-hosted free on Render. UptimeRobot pings it every 5 min so it stays awake.
+## What We Learned
 
+* WebSockets
+* Client-server communication
+* Real-time systems
+* State management
+* DOM manipulation
+* JavaScript architecture
+* Debugging large codebases
+
+---
+
+## Limitations
+
+* No database
+* No authentication
+* No file uploads
+* No voice/video chat
+
+---
+
+## Project Structure
+
+```text
+Connector/
+├── server.js
+├── package.json
+└── public/
+    ├── index.html
+    ├── style.css
+    └── script.js
+```
+
+---
+
+## Notes
+
+This project was built for learning and experimentation.
+
+The code may not always follow production best practices, but every feature was an opportunity to understand how modern web applications are built.
+
+---
+
+Still learning. Still breaking things. Still shipping.
+
+```
+```
