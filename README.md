@@ -104,6 +104,3 @@ The code may not always follow production best practices, but every feature was 
 ---
 
 Still learning. Still breaking things. Still shipping.
-
-```
-```
